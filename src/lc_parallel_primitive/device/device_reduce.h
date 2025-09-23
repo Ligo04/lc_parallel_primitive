@@ -7,13 +7,12 @@
 
 #pragma once
 
-#include "luisa/core/logging.h"
-#include "luisa/core/stl/memory.h"
-#include "luisa/dsl/builtin.h"
-#include "luisa/dsl/resource.h"
-#include "luisa/dsl/sugar.h"
-#include "luisa/dsl/var.h"
-#include "luisa/runtime/buffer.h"
+#include <luisa/core/logging.h>
+#include <luisa/core/stl/memory.h>
+#include <luisa/dsl/builtin.h>
+#include <luisa/dsl/resource.h>
+#include <luisa/dsl/sugar.h>
+#include <luisa/dsl/var.h>
 #include <cstddef>
 #include <lc_parallel_primitive/runtime/core.h>
 #include <lc_parallel_primitive/type_trait.h>
@@ -79,9 +78,9 @@ class DeviceReduce : public LuisaModule
              BufferView<Type4Byte> temp_buffer,
              BufferView<Type4Byte> d_in,
              BufferView<Type4Byte> d_out,
-             size_t                num_item,
-             int                   op = 0)
+             size_t                num_item)
     {
+        reduce(cmdlist, temp_buffer, d_in, d_out, num_item, 0);
     }
 
     template <NumericT Type4Byte>
@@ -89,9 +88,9 @@ class DeviceReduce : public LuisaModule
              BufferView<Type4Byte> temp_buffer,
              BufferView<Type4Byte> d_in,
              BufferView<Type4Byte> d_out,
-             size_t                num_item,
-             int                   op = 0)
+             size_t                num_item)
     {
+        reduce(cmdlist, temp_buffer, d_in, d_out, num_item, 1);
     }
 
     template <NumericT Type4Byte>
@@ -99,9 +98,9 @@ class DeviceReduce : public LuisaModule
              BufferView<Type4Byte> temp_buffer,
              BufferView<Type4Byte> d_in,
              BufferView<Type4Byte> d_out,
-             size_t                num_item,
-             int                   op = 0)
+             size_t                num_item)
     {
+        reduce(cmdlist, temp_buffer, d_in, d_out, num_item, 2);
     }
 
     template <NumericT Type4Byte>
@@ -198,7 +197,8 @@ class DeviceReduce : public LuisaModule
             (*s_data)[ai + bank_offset_a] = data_ai;
             (*s_data)[bi + bank_offset_b] = data_bi;
         };
-        auto up_sweep_op = [&](SmemTypePtr<Type4Byte>& s_data, Int n, Int op)
+
+        auto reduce_op = [&](SmemTypePtr<Type4Byte>& s_data, Int n, Int op)
         {
             Int thid   = Int(thread_id().x);
             Int stride = def(1);
@@ -220,11 +220,11 @@ class DeviceReduce : public LuisaModule
                     }
                     $elif(op == 1)
                     {
-                        (*s_data)[bi] = max((*s_data)[bi], (*s_data)[ai]);
+                        (*s_data)[bi] = min((*s_data)[bi], (*s_data)[ai]);
                     }
                     $elif(op == 2)
                     {
-                        (*s_data)[bi] = min((*s_data)[bi], (*s_data)[ai]);
+                        (*s_data)[bi] = max((*s_data)[bi], (*s_data)[ai]);
                     };
                 };
             };
@@ -259,7 +259,7 @@ class DeviceReduce : public LuisaModule
             {
                 block_index = Int(block_id().x);
             };
-            up_sweep_op(s_data, n, op);
+            reduce_op(s_data, n, op);
             clear_last_element(1, s_data, block_sums, block_index);
         };
 
