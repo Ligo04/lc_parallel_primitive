@@ -108,8 +108,7 @@ class DeviceReduce : public LuisaModule
                 BufferView<Type4Byte> temp_buffer,
                 BufferView<Type4Byte> d_in,
                 BufferView<Type4Byte> d_out,
-                size_t                num_item,
-                int                   op = 0)
+                size_t                num_item)
     {
     }
 
@@ -118,8 +117,7 @@ class DeviceReduce : public LuisaModule
                 BufferView<Type4Byte> temp_buffer,
                 BufferView<Type4Byte> d_in,
                 BufferView<Type4Byte> d_out,
-                size_t                num_item,
-                int                   op = 0)
+                size_t                num_item)
     {
     }
 
@@ -149,7 +147,6 @@ class DeviceReduce : public LuisaModule
         const auto n_blocks        = m_block_size;
         size_t     shared_mem_size = m_shared_mem_size;
         // for reduce
-
         auto load_shared_chunk_from_mem_op = [&](SmemTypePtr<Type4Byte>& s_data,
                                                  BufferVar<Type4Byte>& g_idata,
                                                  Int                   n,
@@ -163,8 +160,9 @@ class DeviceReduce : public LuisaModule
             Int thid   = thread_id_x;
             Int men_ai = baseIndex + thread_id_x;
             Int men_bi = men_ai + block_dim_x;
-            Int ai     = thid;
-            Int bi     = ai + block_dim_x;  // bank conflict free
+
+            Int ai = thid;
+            Int bi = thid + block_dim_x;  // bank conflict free
 
             Int bank_offset_a = conflict_free_offset(ai);
             Int bank_offset_b = conflict_free_offset(bi);
@@ -176,11 +174,11 @@ class DeviceReduce : public LuisaModule
             }
             $elif(op == 1)
             {
-                initial = std::numeric_limits<Type4Byte>::min();
+                initial = std::numeric_limits<Type4Byte>::max();
             }
             $elif(op == 2)
             {
-                initial = std::numeric_limits<Type4Byte>::max();
+                initial = std::numeric_limits<Type4Byte>::min();
             };
 
             Var<Type4Byte> data_ai = initial;
@@ -203,8 +201,9 @@ class DeviceReduce : public LuisaModule
             Int thid   = Int(thread_id().x);
             Int stride = def(1);
 
-            Int d = Int(block_size_x());
-            $if(d > 0)
+            // build the sum in place up the tree
+            Int d = Int(block_size().x);
+            $while(d > 0)
             {
                 sync_block();
                 $if(thid < d)
@@ -227,6 +226,8 @@ class DeviceReduce : public LuisaModule
                         (*s_data)[bi] = max((*s_data)[bi], (*s_data)[ai]);
                     };
                 };
+                stride *= 2;
+                d = d >> 1;
             };
         };
 
@@ -243,9 +244,11 @@ class DeviceReduce : public LuisaModule
                 index += conflict_free_offset(index);
                 $if(storeSum == 1)
                 {
+                    // write this block's total sum to the corresponding index in the blockSums array
                     g_blockSums.write(blockIndex, (*s_data)[index]);
                 };
-                (*s_data)[index] = Type4Byte(0);  // zero the last element in the scan so it will propagate back to the front
+                // zero the last element in the scan so it will propagate back to the front
+                (*s_data)[index] = Type4Byte(0);
             };
         };
 
@@ -259,6 +262,7 @@ class DeviceReduce : public LuisaModule
             {
                 block_index = Int(block_id().x);
             };
+            // build the op in place up the tree
             reduce_op(s_data, n, op);
             clear_last_element(1, s_data, block_sums, block_index);
         };
@@ -293,6 +297,11 @@ class DeviceReduce : public LuisaModule
         ms_reduce_map.try_emplace(
             luisa::string{luisa::compute::Type::of<Type4Byte>()->description()},
             std::move(ms_reduce));
+
+
+        // arg reduce
+
+        // reduce by key
     }
 
 
@@ -386,5 +395,9 @@ class DeviceReduce : public LuisaModule
 
     // for reduce
     luisa::unordered_map<luisa::string, luisa::shared_ptr<luisa::compute::Resource>> ms_reduce_map;
+
+    luisa::unordered_map<luisa::string, luisa::shared_ptr<luisa::compute::Resource>> ms_arg_reduce_map;
+
+    luisa::unordered_map<luisa::string, luisa::shared_ptr<luisa::compute::Resource>> ms_reduce_by_key_map;
 };
 }  // namespace luisa::parallel_primitive

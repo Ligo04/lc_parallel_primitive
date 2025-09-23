@@ -23,6 +23,9 @@ if has_config("test") then
         add_deps("lc_parallel_primitive")
         add_packages("luisa-compute")
         -- add run path for luisa-compute
+        if is_os("mac") then
+            add_defines("__APPLE__")
+        end
         on_config(function (target)
             target:add("runargs", path.join(target:pkg("luisa-compute"):installdir(), "bin"))
         end)

@@ -22,7 +22,11 @@ int main(int argc, char* argv[])
     log_level_verbose();
 
     Context context{argv[1]};
-    Device  device = context.create_device("cuda");
+#ifdef _WIN32
+    Device device = context.create_device("cuda");
+#elif __APPLE__
+    Device device = context.create_device("metal");
+#endif
 
     DeviceReduce reducer;
     reducer.create(device);
@@ -57,29 +61,29 @@ int main(int argc, char* argv[])
     stream << temp_buffer.copy_from(temp.data()) << synchronize();
     LUISA_INFO("Temp buffer: [{}, {}, {}]", temp[0], temp[1], temp[2]);
 
-    // reduce(min)
-    // reducer.Min(cmdlist,
-    //             temp_buffer.view(),
-    //             in_buffer.view(),
-    //             out_buffer.view(),
-    //             in_buffer.size());
-    // stream << cmdlist.commit() << synchronize();
-    // stream << out_buffer.copy_to(result.data()) << synchronize();  // 输出结果
-    // LUISA_INFO("Result Min(0+1+2+...+1023): {}",
-    //            *std::min_element(input_data.begin(), input_data.end()));
-    // LUISA_INFO("Reduce Min: {}", result[0]);
+    //reduce(min)
+    reducer.Min(cmdlist,
+                temp_buffer.view(),
+                in_buffer.view(),
+                out_buffer.view(),
+                in_buffer.size());
+    stream << cmdlist.commit() << synchronize();
+    stream << out_buffer.copy_to(result.data()) << synchronize();  // 输出结果
+    LUISA_INFO("Result Min(0+1+2+...+1023): {}",
+               *std::min_element(input_data.begin(), input_data.end()));
+    LUISA_INFO("Reduce Min: {}", result[0]);
 
 
-    // // reduce(max)
-    // reducer.Max(cmdlist,
-    //             temp_buffer.view(),
-    //             in_buffer.view(),
-    //             out_buffer.view(),
-    //             in_buffer.size());
-    // stream << cmdlist.commit() << synchronize();
-    // stream << out_buffer.copy_to(result.data()) << synchronize();  // 输出结果
-    // LUISA_INFO("Result Max(0+1+2+...+1023): {}",
-    //            *std::max_element(input_data.begin(), input_data.end()));
-    // LUISA_INFO("Reduce Max: {}", result[0]);
+    // reduce(max)
+    reducer.Max(cmdlist,
+                temp_buffer.view(),
+                in_buffer.view(),
+                out_buffer.view(),
+                in_buffer.size());
+    stream << cmdlist.commit() << synchronize();
+    stream << out_buffer.copy_to(result.data()) << synchronize();  // 输出结果
+    LUISA_INFO("Result Max(0+1+2+...+1023): {}",
+               *std::max_element(input_data.begin(), input_data.end()));
+    LUISA_INFO("Reduce Max: {}", result[0]);
     return 0;
 }
