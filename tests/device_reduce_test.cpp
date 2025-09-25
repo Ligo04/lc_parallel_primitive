@@ -11,11 +11,11 @@
 #include <algorithm>
 #include <lc_parallel_primitive/parallel_primitive.h>
 #include <vector>
-
+#include <boost/ut.hpp>
 using namespace luisa;
 using namespace luisa::compute;
 using namespace luisa::parallel_primitive;
-
+using namespace boost::ut;
 int main(int argc, char* argv[])
 {
 
@@ -51,15 +51,14 @@ int main(int argc, char* argv[])
                 in_buffer.view(),
                 out_buffer.view(),
                 in_buffer.size());
+
     stream << cmdlist.commit() << synchronize();
     std::vector<int32> result(1);
     stream << out_buffer.copy_to(result.data()) << synchronize();  // 输出结果
     LUISA_INFO("Result (0+1+2+...+1023): {}", (1023 * 1024) / 2);
     LUISA_INFO("Reduce: {}", result[0]);
 
-    std::vector<int32> temp(3);
-    stream << temp_buffer.copy_from(temp.data()) << synchronize();
-    LUISA_INFO("Temp buffer: [{}, {}, {}]", temp[0], temp[1], temp[2]);
+    "reduce"_test = [&] { expect((1023 * 1024) / 2 == result[0]); };
 
     //reduce(min)
     reducer.Min(cmdlist,
@@ -72,7 +71,10 @@ int main(int argc, char* argv[])
     LUISA_INFO("Result Min(0+1+2+...+1023): {}",
                *std::min_element(input_data.begin(), input_data.end()));
     LUISA_INFO("Reduce Min: {}", result[0]);
-
+    "reduce min"_test = [&]
+    {
+        expect(*std::min_element(input_data.begin(), input_data.end()) == result[0]);
+    };
 
     // reduce(max)
     reducer.Max(cmdlist,
@@ -85,5 +87,9 @@ int main(int argc, char* argv[])
     LUISA_INFO("Result Max(0+1+2+...+1023): {}",
                *std::max_element(input_data.begin(), input_data.end()));
     LUISA_INFO("Reduce Max: {}", result[0]);
+    "reduce max"_test = [&]
+    {
+        expect(*std::max_element(input_data.begin(), input_data.end()) == result[0]);
+    };
     return 0;
 }

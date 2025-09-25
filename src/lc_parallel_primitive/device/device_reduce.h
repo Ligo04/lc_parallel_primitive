@@ -2,11 +2,11 @@
  * @Author: Ligo 
  * @Date: 2025-09-19 14:24:07 
  * @Last Modified by: Ligo
- * @Last Modified time: 2025-09-23 00:06:30
+ * @Last Modified time: 2025-09-25 21:49:39
  */
 
 #pragma once
-
+#include <luisa/dsl/struct.h>
 #include <luisa/core/logging.h>
 #include <luisa/core/stl/memory.h>
 #include <luisa/dsl/builtin.h>
@@ -16,22 +16,35 @@
 #include <cstddef>
 #include <lc_parallel_primitive/runtime/core.h>
 #include <lc_parallel_primitive/type_trait.h>
+#include <lc_parallel_primitive/template_struct.h>
 #include <limits>
+
+// using namespace luisa::compute;
+template <NumericT Type4Byte>
+struct KeyValuePair
+{
+    int       index;
+    Type4Byte value;
+};
+#define KEY_VALUE_PAIR_TEMPLATE() template <NumericT Type4Byte>
+#define KEY_VALUE_PAIR() KeyValuePair<Type4Byte>
+
+
+LUISA_TEMPLATE_STRUCT(KEY_VALUE_PAIR_TEMPLATE, KEY_VALUE_PAIR, index, value){};
 
 namespace luisa::parallel_primitive
 {
-namespace detail
-{
 
-}
 using namespace luisa::compute;
-
 class DeviceReduce : public LuisaModule
 {
     template <NumericT Type4Byte>
     using ReduceShaderT =
         Shader<1, Buffer<Type4Byte>, Buffer<Type4Byte>, int, int, int, int>;
-    // Implementation details for DeviceReduce
+    template <NumericT Type4Byte>
+    using ArgReduceShaderT =
+        Shader<1, Buffer<Type4Byte>, Buffer<Type4Byte>, Buffer<Type4Byte>, int, int, int, int>;
+
   public:
     int m_block_size    = 256;
     int m_num_banks     = 32;
@@ -52,6 +65,9 @@ class DeviceReduce : public LuisaModule
         m_shared_mem_size          = (num_elements_per_block + extra_space);
         compile<int>(device);
         compile<float>(device);
+#ifdef __WIN32
+        compile<double>(device);
+#endif
         m_created = true;
     }
 
@@ -72,6 +88,7 @@ class DeviceReduce : public LuisaModule
         reduce_array_recursive<Type4Byte>(
             cmdlist, temp_buffer, d_in, d_out, num_item, 0, 0, op);
     }
+
 
     template <NumericT Type4Byte>
     void Sum(CommandList&          cmdlist,
@@ -108,8 +125,17 @@ class DeviceReduce : public LuisaModule
                 BufferView<Type4Byte> temp_buffer,
                 BufferView<Type4Byte> d_in,
                 BufferView<Type4Byte> d_out,
+                BufferView<uint>      d_index_out,
                 size_t                num_item)
     {
+        size_t temp_storage_size = 0;
+        get_temp_size_scan(temp_storage_size, m_block_size, num_item);
+        LUISA_ASSERT(temp_buffer.size() >= temp_storage_size,
+                     "Please resize the temp buffer to at least {} elements, but got {} elements.",
+                     temp_storage_size,
+                     temp_buffer.size());
+        arg_reduce_array_recursive<Type4Byte>(
+            cmdlist, temp_buffer, d_in, d_out, d_index_out, num_item, 0, 0, 0);
     }
 
     template <NumericT Type4Byte>
@@ -117,8 +143,17 @@ class DeviceReduce : public LuisaModule
                 BufferView<Type4Byte> temp_buffer,
                 BufferView<Type4Byte> d_in,
                 BufferView<Type4Byte> d_out,
+                BufferView<uint>      d_index_out,
                 size_t                num_item)
     {
+        size_t temp_storage_size = 0;
+        get_temp_size_scan(temp_storage_size, m_block_size, num_item);
+        LUISA_ASSERT(temp_buffer.size() >= temp_storage_size,
+                     "Please resize the temp buffer to at least {} elements, but got {} elements.",
+                     temp_storage_size,
+                     temp_buffer.size());
+        arg_reduce_array_recursive<Type4Byte>(
+            cmdlist, temp_buffer, d_in, d_out, d_index_out, num_item, 0, 0, 0);
     }
 
 
@@ -134,6 +169,19 @@ class DeviceReduce : public LuisaModule
     {
     }
 
+
+    template <NumericT Type4Byte>
+    void TransformReduce(CommandList&          cmdlist,
+                         BufferView<Type4Byte> temp_buffer,
+                         BufferView<Type4Byte> d_keys_in,
+                         BufferView<Type4Byte> d_values_in,
+                         BufferView<Type4Byte> d_keys_out,
+                         BufferView<Type4Byte> d_values_out,
+                         size_t                num_item,
+                         int                   op = 0)
+    {
+    }
+
   private:
     inline luisa::compute::Int conflict_free_offset(luisa::compute::Int i)
     {
@@ -146,6 +194,8 @@ class DeviceReduce : public LuisaModule
 
         const auto n_blocks        = m_block_size;
         size_t     shared_mem_size = m_shared_mem_size;
+
+
         // for reduce
         auto load_shared_chunk_from_mem_op = [&](SmemTypePtr<Type4Byte>& s_data,
                                                  BufferVar<Type4Byte>& g_idata,
@@ -266,7 +316,7 @@ class DeviceReduce : public LuisaModule
             reduce_op(s_data, n, op);
             clear_last_element(1, s_data, block_sums, block_index);
         };
-
+        //  reduce
         luisa::unique_ptr<ReduceShaderT<Type4Byte>> ms_reduce = nullptr;
         lazy_compile(device,
                      ms_reduce,
@@ -298,9 +348,149 @@ class DeviceReduce : public LuisaModule
             luisa::string{luisa::compute::Type::of<Type4Byte>()->description()},
             std::move(ms_reduce));
 
+        using KVP = KeyValuePair<Type4Byte>;
+        auto load_shared_chunk_from_mem_op_arg =
+            [&](SmemTypePtr<KVP>& s_data, BufferVar<KVP>& g_idata, Int n, Int& baseIndex, Int op)
+        {
+            Int thread_id_x = Int(thread_id().x);
+            Int block_id_x  = Int(block_id().x);
+            Int block_dim_x = Int(block_size_x());
+
+            Int thid   = thread_id_x;
+            Int men_ai = baseIndex + thread_id_x;
+            Int men_bi = men_ai + block_dim_x;
+
+            Int ai = thid;
+            Int bi = thid + block_dim_x;  // bank conflict free
+
+            Int bank_offset_a = conflict_free_offset(ai);
+            Int bank_offset_b = conflict_free_offset(bi);
+
+            Var<KVP> initial{0, 0};  // $if(op == 0)
+            // {
+            //     initial.index = thread_id_x;
+            //     initial.value = Type4Byte(0);
+            // }
+            // $elif(op == 1)
+            // {
+            //     initial.index = thread_id_x;
+            //     initial.value = std::numeric_limits<Type4Byte>::max();
+            // }
+            // $elif(op == 2)
+            // {
+            //     initial.index = thread_id_x;
+            //     initial.value = std::numeric_limits<Type4Byte>::min();
+            // };
+
+            Var<KVP> data_ai = initial;
+            Var<KVP> data_bi = initial;
+
+            $if(ai < n)
+            {
+                data_ai = g_idata.read(men_ai);
+            };
+            $if(bi < n)
+            {
+                data_bi = g_idata.read(men_bi);
+            };
+            (*s_data)[ai + bank_offset_a] = data_ai;
+            (*s_data)[bi + bank_offset_b] = data_bi;
+        };
 
         // arg reduce
+        auto argmin_op = [&](Var<KVP>& a, Var<KVP>& b) noexcept
+        {
+            $if(b.value < a.value | (b.value == a.value & b.index < a.index))
+            {
+                a = b;
+            };
+            return a;
+        };
 
+        auto argmax_op = [&](Var<KVP>& a, Var<KVP>& b) noexcept
+        {
+            $if(b.value > a.value | (b.value == a.value & b.index < a.index))
+            {
+                a = b;
+            };
+            return a;
+        };
+
+        auto arg_reduce_op = [&](SmemTypePtr<KVP>& s_data, Int n, Int op)
+        {
+            Int thid   = Int(thread_id().x);
+            Int stride = def(1);
+
+            // build the sum in place up the tree
+            Int d = Int(block_size().x);
+            $while(d > 0)
+            {
+                sync_block();
+                $if(thid < d)
+                {
+                    Int i  = (stride * 2) * thid;
+                    Int ai = i + stride - 1;
+                    Int bi = ai + stride;
+                    ai += conflict_free_offset(ai);
+                    bi += conflict_free_offset(bi);
+                    $if(op == 0)
+                    {
+                        (*s_data)[bi] = argmin_op((*s_data)[bi], (*s_data)[ai]);
+                    }
+                    $elif(op == 1)
+                    {
+                        (*s_data)[bi] = argmax_op((*s_data)[bi], (*s_data)[ai]);
+                    };
+                };
+                stride *= 2;
+                d = d >> 1;
+            };
+        };
+
+
+        auto arg_reduce_block = [&](SmemTypePtr<Type4Byte>& s_data,
+                                    BufferVar<Type4Byte>&   block_sums,
+                                    BufferVar<Type4Byte>&   index_out,
+                                    Int                     block_index,
+                                    Int                     n,
+                                    Int                     op)
+        {
+            $if(block_index == 0)
+            {
+                block_index = Int(block_id().x);
+            };
+            // build the op in place up the tree
+            // arg_reduce_op(s_data, s_index, n, op);
+        };
+
+        luisa::unique_ptr<ArgReduceShaderT<Type4Byte>> ms_arg_reduce = nullptr;
+        lazy_compile(device,
+                     ms_arg_reduce,
+                     [&](BufferVar<Type4Byte> g_idata,
+                         BufferVar<Type4Byte> g_block_sums,
+                         BufferVar<Type4Byte> g_index_out,
+                         Int                  n,
+                         Int                  block_index,
+                         Int                  base_index,
+                         Int                  op) noexcept
+                     {
+                         set_block_size(n_blocks);
+                         Int ai, bi, men_ai, men_bi, bank_offset_a, bank_offset_b;
+                         Int block_id_x  = Int(block_id().x);
+                         Int block_dim_x = Int(block_size_x());
+
+                         SmemTypePtr<Type4Byte> s_data =
+                             new SmemType<Type4Byte>{shared_mem_size};
+
+                         $if(base_index == 0)
+                         {
+                             base_index = block_id_x * (block_dim_x << 1);
+                         };
+                         load_shared_chunk_from_mem_op(s_data, g_idata, n, base_index, op);
+                     });
+        ms_arg_reduce_map.try_emplace(
+            luisa::string{luisa::compute::Type::of<Type4Byte>()->description()},
+            std::move(ms_arg_reduce));
         // reduce by key
     }
 
@@ -393,11 +583,62 @@ class DeviceReduce : public LuisaModule
     };
 
 
-    // for reduce
+    template <NumericT Type4Byte>
+    void arg_reduce_array_recursive(luisa::compute::CommandList& cmdlist,
+                                    BufferView<Type4Byte>        temp_storage,
+                                    BufferView<Type4Byte>        arr_in,
+                                    BufferView<Type4Byte>        arr_out,
+                                    BufferView<uint>             arr_index_out,
+                                    int                          num_elements,
+                                    int                          offset,
+                                    int                          level,
+                                    int                          op) noexcept
+    {
+        int block_size = m_block_size;
+        int num_blocks = imax(1, (int)ceil((float)num_elements / (2.0f * block_size)));
+        int num_threads;
+
+        if(num_blocks > 1)
+        {
+            num_threads = block_size;
+        }
+        else if(is_power_of_two(num_elements))
+        {
+            num_threads = num_elements / 2;
+        }
+        else
+        {
+            num_threads = floor_pow_2(num_elements);
+        }
+
+        int num_elements_per_block = num_threads * 2;
+        int num_elements_last_block = num_elements - (num_blocks - 1) * num_elements_per_block;
+        int num_threads_last_block = imax(1, num_elements_last_block / 2);
+        int np2_last_block         = 0;
+        int shared_mem_last_block  = 0;
+
+        if(num_elements_last_block != num_elements_per_block)
+        {
+            // NOT POWER OF 2
+            np2_last_block = 1;
+            if(!is_power_of_two(num_elements_last_block))
+            {
+                num_threads_last_block = floor_pow_2(num_elements_last_block);
+            }
+        }
+        size_t                size_elements = temp_storage.size() - offset;
+        BufferView<Type4Byte> temp_buffer_level =
+            temp_storage.subview(offset, size_elements);
+        // execute the scan
+        auto key = luisa::compute::Type::of<Type4Byte>()->description();
+        auto ms_reduce_it = ms_reduce_map.find(key);
+        auto ms_reduce_ptr =
+            reinterpret_cast<ArgReduceShaderT<Type4Byte>*>(&(*ms_reduce_it->second));
+    };
+
+
     luisa::unordered_map<luisa::string, luisa::shared_ptr<luisa::compute::Resource>> ms_reduce_map;
-
     luisa::unordered_map<luisa::string, luisa::shared_ptr<luisa::compute::Resource>> ms_arg_reduce_map;
-
     luisa::unordered_map<luisa::string, luisa::shared_ptr<luisa::compute::Resource>> ms_reduce_by_key_map;
 };
 }  // namespace luisa::parallel_primitive

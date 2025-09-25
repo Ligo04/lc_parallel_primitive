@@ -16,16 +16,19 @@ target("lc_parallel_primitive")
     add_packages("luisa-compute", {public = true})
 target_end()
 
+
 if has_config("test") then
+    add_requires("boost_ut")
     target("test")
         set_kind("binary")
         add_files("tests/**.cpp")
         add_deps("lc_parallel_primitive")
-        add_packages("luisa-compute")
+        add_packages("boost_ut","luisa-compute")
         -- add run path for luisa-compute
         if is_os("mac") then
             add_defines("__APPLE__")
         end
+
         on_config(function (target)
             target:add("runargs", path.join(target:pkg("luisa-compute"):installdir(), "bin"))
         end)
