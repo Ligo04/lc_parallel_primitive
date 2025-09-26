@@ -58,7 +58,7 @@ int main(int argc, char* argv[])
     //reduce(min)
     reducer.Min(cmdlist, stream, in_buffer.view(), out_buffer.view(), in_buffer.size());
     stream << out_buffer.copy_to(result.data()) << synchronize();  // 输出结果
-    LUISA_INFO("Result Min(0+1+2+...+1023): {}",
+    LUISA_INFO("Result Min(0-1023): {}",
                *std::min_element(input_data.begin(), input_data.end()));
     LUISA_INFO("Reduce Min: {}", result[0]);
     "reduce min"_test = [&]
@@ -69,7 +69,7 @@ int main(int argc, char* argv[])
     // reduce(max)
     reducer.Max(cmdlist, stream, in_buffer.view(), out_buffer.view(), in_buffer.size());
     stream << out_buffer.copy_to(result.data()) << synchronize();  // 输出结果
-    LUISA_INFO("Result Max(0+1+2+...+1023): {}",
+    LUISA_INFO("Result Max(0-1023): {}",
                *std::max_element(input_data.begin(), input_data.end()));
     LUISA_INFO("Reduce Max: {}", result[0]);
     "reduce max"_test = [&]
@@ -115,7 +115,7 @@ int main(int argc, char* argv[])
     stream << index_out_buffer.copy_to(index_result.data()) << synchronize();  // 输出结果
 
 
-    LUISA_INFO("Index ArgMax(0+1+2+...+1023): {}",
+    LUISA_INFO("Index ArgMax: {}",
                std::max_element(input_data.begin(), input_data.end())
                    - input_data.begin());
     LUISA_INFO("Index ArgMax(reduce): {}", index_result[0]);
