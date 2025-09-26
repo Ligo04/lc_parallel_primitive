@@ -1,3 +1,9 @@
+/*
+ * @Author: Ligo 
+ * @Date: 2025-09-26 15:45:46 
+ * @Last Modified by:   Ligo 
+ * @Last Modified time: 2025-09-26 15:45:46 
+ */
 #pragma once
 #include <luisa/dsl/struct.h>
 #include <luisa/core/macro.h>

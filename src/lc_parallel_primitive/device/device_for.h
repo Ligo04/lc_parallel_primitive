@@ -2,12 +2,12 @@
  * @Author: Ligo 
  * @Date: 2025-09-19 23:06:17 
  * @Last Modified by: Ligo
- * @Last Modified time: 2025-09-22 14:29:36
+ * @Last Modified time: 2025-09-26 17:07:09
  */
 #pragma once
 
 #include <lc_parallel_primitive/runtime/core.h>
-#include <lc_parallel_primitive/type_trait.h>
+#include <lc_parallel_primitive/common/type_trait.h>
 
 namespace luisa::parallel_primitive
 {

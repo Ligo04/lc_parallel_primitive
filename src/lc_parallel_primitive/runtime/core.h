@@ -108,6 +108,7 @@ class LuisaModule : public vstd::IOperatorNewBase
     template <size_t I, typename... Ts>
     using Kernel = luisa::compute::Kernel<I, Ts...>;
 
+
     using Device      = luisa::compute::Device;
     using CommandList = luisa::compute::CommandList;
     using float2      = luisa::float2;

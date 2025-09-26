@@ -1,6 +1,6 @@
 #pragma once
 
-#include <lc_parallel_primitive/type_trait.h>
+#include <lc_parallel_primitive/common/type_trait.h>
 #include <lc_parallel_primitive/runtime/core.h>
 
 namespace luisa::parallel_primitive
