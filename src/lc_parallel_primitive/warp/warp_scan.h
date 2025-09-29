@@ -1,70 +1,49 @@
+/*
+ * @Author: Ligo 
+ * @Date: 2025-09-29 11:30:37 
+ * @Last Modified by: Ligo
+ * @Last Modified time: 2025-09-29 11:36:10
+ */
 #pragma once
 
 #include <lc_parallel_primitive/common/type_trait.h>
 #include <lc_parallel_primitive/runtime/core.h>
+#include <luisa/dsl/builtin.h>
 
 namespace luisa::parallel_primitive
 {
-namespace detail
+template <NumericT Type4Byte>
+class WarpScan : public LuisaModule
 {
+    using ReduceOpCallable = luisa::compute::Callable<luisa::compute::Var<Type4Byte>()>;
 
-}
-class Warpscan : public LuisaModule
-{
-    // warp level Scan
   public:
-    Warpscan()  = default;
-    ~Warpscan() = default;
+    WarpScan() {}
+    ~WarpScan() = default;
 
-    template <NumericT Type4Byte>
-    void InclusiveSum(CommandList&          cmdlist,
-                      BufferView<Type4Byte> temp_buffer,
-                      BufferView<Type4Byte> d_in,
-                      BufferView<Type4Byte> d_out,
-                      size_t                num_item,
-                      int                   op = 0)
+  private:
+    template <typename ScanOp>
+    ReduceOpCallable Reduce(const Var<Type4Byte>& d_in, ScanOp op)
     {
+        return [&]
+        {
+            // TODO: implement warp scan with op
+        };
     }
 
-    template <NumericT Type4Byte>
-    void ExclusiveSum(CommandList&          cmdlist,
-                      BufferView<Type4Byte> temp_buffer,
-                      BufferView<Type4Byte> d_in,
-                      BufferView<Type4Byte> d_out,
-                      size_t                num_item,
-                      int                   op = 0)
+    ReduceOpCallable Sum(const Var<Type4Byte>& d_in)
     {
+        return [&] { warp_active_sum(d_in); };
     }
 
-    template <NumericT Type4Byte>
-    void InclusiveScan(CommandList&          cmdlist,
-                       BufferView<Type4Byte> temp_buffer,
-                       BufferView<Type4Byte> d_in,
-                       BufferView<Type4Byte> d_out,
-                       size_t                num_item,
-                       int                   op = 0)
+    ReduceOpCallable Min(const Var<Type4Byte>& d_in)
     {
+        return [&] { warp_active_min(d_in); };
     }
 
-
-    template <NumericT Type4Byte>
-    void ExclusiveScan(CommandList&          cmdlist,
-                       BufferView<Type4Byte> temp_buffer,
-                       BufferView<Type4Byte> d_in,
-                       BufferView<Type4Byte> d_out,
-                       size_t                num_item,
-                       int                   op = 0)
+    ReduceOpCallable Max(const Var<Type4Byte>& d_in)
     {
-    }
-
-    template <NumericT Type4Byte>
-    void Scan(CommandList&          cmdlist,
-              BufferView<Type4Byte> temp_buffer,
-              BufferView<Type4Byte> d_in,
-              BufferView<Type4Byte> d_out,
-              size_t                num_item,
-              int                   op = 0)
-    {
+        return [&] { warp_active_max(d_in); };
     }
 };
 }  // namespace luisa::parallel_primitive

@@ -92,6 +92,8 @@ class LuisaModule : public vstd::IOperatorNewBase
   protected:
     using Context = luisa::compute::Context;
     template <typename T>
+    using Var = luisa::compute::Var<T>;
+    template <typename T>
     using Buffer = luisa::compute::Buffer<T>;
     template <typename T>
     using BufferView = luisa::compute::BufferView<T>;
@@ -128,6 +130,12 @@ class LuisaModule : public vstd::IOperatorNewBase
 
     using Stream = luisa::compute::Stream;
     using Type   = luisa::compute::Type;
+
+    int                        m_log_mem_banks = 5;
+    inline luisa::compute::Int conflict_free_offset(luisa::compute::Int i)
+    {
+        return i >> m_log_mem_banks;
+    }
 };
 
 

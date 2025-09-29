@@ -2,11 +2,11 @@
  * @Author: Ligo 
  * @Date: 2025-09-19 14:19:18 
  * @Last Modified by: Ligo
- * @Last Modified time: 2025-09-22 11:36:19
+ * @Last Modified time: 2025-09-29 14:03:36
  */
 #pragma once
 #include <lc_parallel_primitive/runtime/core.h>
-#include <lc_parallel_primitive/type_trait.h>
+#include <lc_parallel_primitive/common/type_trait.h>
 
 namespace luisa::parallel_primitive
 {
@@ -18,11 +18,7 @@ class WarpExchange : public LuisaModule
     ~WarpExchange() = default;
 
     template <NumericT Type4Byte>
-    void Exchange(CommandList&          cmdlist,
-                  BufferView<Type4Byte> d_in,
-                  BufferView<Type4Byte> d_out,
-                  size_t                num_item,
-                  int                   op = 0)
+    void Exchange(Var<Type4Byte> d_in)
     {
     }
 };

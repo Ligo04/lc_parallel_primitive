@@ -2,11 +2,11 @@
  * @Author: Ligo 
  * @Date: 2025-09-19 14:24:07 
  * @Last Modified by: Ligo
- * @Last Modified time: 2025-09-26 18:10:01
+ * @Last Modified time: 2025-09-29 11:52:20
  */
 
 #pragma once
-#include "luisa/ast/type.h"
+// #include "luisa/ast/type.h"
 #include "luisa/runtime/stream.h"
 #include <luisa/dsl/struct.h>
 #include <luisa/core/logging.h>
@@ -19,35 +19,48 @@
 #include <lc_parallel_primitive/runtime/core.h>
 #include <lc_parallel_primitive/common/type_trait.h>
 #include <lc_parallel_primitive/common/keyvaluepair.h>
-#include <limits>
-
+#include <lc_parallel_primitive/block/block_reduce.h>
+#include <lc_parallel_primitive/warp/warp_reduce.h>
 namespace luisa::parallel_primitive
 {
 
 using namespace luisa::compute;
 class DeviceReduce : public LuisaModule
 {
+  private:
     template <NumericT Type4Byte>
-    using KVTP = KeyValuePair<int, Type4Byte>;
+    using IndexValuePairT = KeyValuePair<int, Type4Byte>;
 
     template <NumericT Type4Byte>
     using ReduceShaderT =
         Shader<1, Buffer<Type4Byte>, Buffer<Type4Byte>, int, int, int, int>;
     template <NumericT Type4Byte>
     using ArgReduceShaderT =
-        Shader<1, Buffer<KVTP<Type4Byte>>, Buffer<KVTP<Type4Byte>>, int, int, int, int>;
+        Shader<1, Buffer<IndexValuePairT<Type4Byte>>, Buffer<IndexValuePairT<Type4Byte>>, int, int, int, int>;
 
     template <NumericT Type4Byte>
-    using ConstructKVPShaderT = Shader<1, Buffer<Type4Byte>, Buffer<KVTP<Type4Byte>>>;
+    using ArgConstructShaderT =
+        Shader<1, Buffer<Type4Byte>, Buffer<IndexValuePairT<Type4Byte>>>;
 
     template <NumericT Type4Byte>
+    using ArgAssignShaderT =
+        Shader<1, Buffer<IndexValuePairT<Type4Byte>>, Buffer<Type4Byte>, Buffer<int>>;
+
+    // for reduce by key
+    template <NumericT KeyType, NumericT ValueType>
+    using KVPT = KeyValuePair<KeyType, ValueType>;
+
+    template <NumericT KeyType, NumericT ValueType>
+    using ConstructKVPShaderT =
+        Shader<1, Buffer<KeyType>, Buffer<ValueType>, Buffer<KVPT<KeyType, ValueType>>>;
+
+    template <NumericT KeyType, NumericT ValueType>
     using AssignKVPShaderT =
-        Shader<1, Buffer<KVTP<Type4Byte>>, Buffer<Type4Byte>, Buffer<int>>;
+        Shader<1, Buffer<KVPT<KeyType, ValueType>>, Buffer<KeyType>, Buffer<ValueType>>;
 
   public:
-    int m_block_size    = 256;
-    int m_num_banks     = 32;
-    int m_log_mem_banks = 5;
+    int m_block_size = 256;
+    int m_warp_nums  = 32;
 
   private:
     int    m_shared_mem_size = 0;
@@ -62,13 +75,14 @@ class DeviceReduce : public LuisaModule
     {
         m_device                   = device;
         int num_elements_per_block = m_block_size * 2;
-        int extra_space            = num_elements_per_block / m_num_banks;
+        int extra_space            = num_elements_per_block / m_warp_nums;
         m_shared_mem_size          = (num_elements_per_block + extra_space);
         compile<int>(device);
         compile<float>(device);
 #ifdef __WIN32
         compile<double>(device);
 #endif
+        // for reduce by key
         m_created = true;
     }
 
@@ -130,29 +144,29 @@ class DeviceReduce : public LuisaModule
         size_t temp_storage_size = 0;
         get_temp_size_scan(temp_storage_size, m_block_size, num_item);
         // key value pair reduce
-        Buffer<KVTP<Type4Byte>> d_in_kv =
-            m_device.create_buffer<KVTP<Type4Byte>>(d_in.size());
+        Buffer<IndexValuePairT<Type4Byte>> d_in_kv =
+            m_device.create_buffer<IndexValuePairT<Type4Byte>>(d_in.size());
 
         // construct key value pair
         auto key = luisa::compute::Type::of<Type4Byte>()->description();
-        auto ms_kvp_construct_it = ms_kvp_construct_map.find(key);
-        auto ms_kvp_construct_ptr = reinterpret_cast<ConstructKVPShaderT<Type4Byte>*>(
+        auto ms_kvp_construct_it = ms_arg_construct_map.find(key);
+        auto ms_kvp_construct_ptr = reinterpret_cast<ArgConstructShaderT<Type4Byte>*>(
             &(*ms_kvp_construct_it->second));
         cmdlist << (*ms_kvp_construct_ptr)(d_in, d_in_kv.view()).dispatch(d_in.size());
 
-        Buffer<KVTP<Type4Byte>> temp_buffer =
-            m_device.create_buffer<KVTP<Type4Byte>>(temp_storage_size);
-        Buffer<KVTP<Type4Byte>> d_out_kv = m_device.create_buffer<KVTP<Type4Byte>>(1);
+        Buffer<IndexValuePairT<Type4Byte>> temp_buffer =
+            m_device.create_buffer<IndexValuePairT<Type4Byte>>(temp_storage_size);
+        Buffer<IndexValuePairT<Type4Byte>> d_out_kv =
+            m_device.create_buffer<IndexValuePairT<Type4Byte>>(1);
         arg_reduce_array_recursive<Type4Byte>(
             cmdlist, temp_buffer.view(), d_in_kv.view(), d_out_kv.view(), num_item, 0, 0, 0);
 
         // copy result to d_out and d_index_out
-        auto ms_kvp_assign_it = ms_kvp_assign_map.find(key);
+        auto ms_kvp_assign_it = ms_arg_assign_map.find(key);
         auto ms_kvp_assign_ptr =
-            reinterpret_cast<AssignKVPShaderT<Type4Byte>*>(&(*ms_kvp_assign_it->second));
+            reinterpret_cast<ArgAssignShaderT<Type4Byte>*>(&(*ms_kvp_assign_it->second));
         cmdlist << (*ms_kvp_assign_ptr)(d_out_kv.view(), d_out, d_index_out)
                        .dispatch(d_index_out.size());
-
         stream << cmdlist.commit() << synchronize();
     }
 
@@ -166,43 +180,44 @@ class DeviceReduce : public LuisaModule
     {
         size_t temp_storage_size = 0;
         get_temp_size_scan(temp_storage_size, m_block_size, num_item);
+        Buffer<IndexValuePairT<Type4Byte>> temp_buffer =
+            m_device.create_buffer<IndexValuePairT<Type4Byte>>(temp_storage_size);
+
         // key value pair reduce
-        Buffer<KVTP<Type4Byte>> d_in_kv =
-            m_device.create_buffer<KVTP<Type4Byte>>(d_in.size());
+        Buffer<IndexValuePairT<Type4Byte>> d_in_kv =
+            m_device.create_buffer<IndexValuePairT<Type4Byte>>(d_in.size());
 
         // construct key value pair
         auto key = luisa::compute::Type::of<Type4Byte>()->description();
-        auto ms_kvp_construct_it = ms_kvp_construct_map.find(key);
-        auto ms_kvp_construct_ptr = reinterpret_cast<ConstructKVPShaderT<Type4Byte>*>(
-            &(*ms_kvp_construct_it->second));
-        cmdlist << (*ms_kvp_construct_ptr)(d_in, d_in_kv.view()).dispatch(d_in.size());
+        auto ms_arg_construct_it = ms_arg_construct_map.find(key);
+        auto ms_arg_construct_ptr = reinterpret_cast<ArgConstructShaderT<Type4Byte>*>(
+            &(*ms_arg_construct_it->second));
+        cmdlist << (*ms_arg_construct_ptr)(d_in, d_in_kv.view()).dispatch(d_in.size());
 
-        Buffer<KVTP<Type4Byte>> temp_buffer =
-            m_device.create_buffer<KVTP<Type4Byte>>(temp_storage_size);
-        Buffer<KVTP<Type4Byte>> d_out_kv = m_device.create_buffer<KVTP<Type4Byte>>(1);
+        Buffer<IndexValuePairT<Type4Byte>> d_out_kv =
+            m_device.create_buffer<IndexValuePairT<Type4Byte>>(1);
         arg_reduce_array_recursive<Type4Byte>(
             cmdlist, temp_buffer.view(), d_in_kv.view(), d_out_kv.view(), num_item, 0, 0, 1);
 
         // copy result to d_out and d_index_out
-        auto ms_kvp_assign_it = ms_kvp_assign_map.find(key);
-        auto ms_kvp_assign_ptr =
-            reinterpret_cast<AssignKVPShaderT<Type4Byte>*>(&(*ms_kvp_assign_it->second));
-        cmdlist << (*ms_kvp_assign_ptr)(d_out_kv.view(), d_out, d_index_out)
+        auto ms_arg_assign_it = ms_arg_assign_map.find(key);
+        auto ms_arg_assign_ptr =
+            reinterpret_cast<ArgAssignShaderT<Type4Byte>*>(&(*ms_arg_assign_it->second));
+        cmdlist << (*ms_arg_assign_ptr)(d_out_kv.view(), d_out, d_index_out)
                        .dispatch(d_index_out.size());
-
         // Stream stream = m_device.create_stream();
         stream << cmdlist.commit() << synchronize();
     }
 
 
-    template <NumericT Type4Byte>
+    template <NumericT KeyType, NumericT ValueType>
     void ReduceByKey(CommandList&          cmdlist,
-                     BufferView<Type4Byte> temp_buffer,
-                     BufferView<Type4Byte> d_keys_in,
-                     BufferView<Type4Byte> d_values_in,
-                     BufferView<Type4Byte> d_keys_out,
-                     BufferView<Type4Byte> d_values_out,
-                     size_t                num_item,
+                     Stream&               stream,
+                     BufferView<KeyType>   d_keys_in,
+                     BufferView<ValueType> d_values_in,
+                     BufferView<KeyType>   d_unique_out,
+                     BufferView<ValueType> d_aggregates_out,
+                     BufferView<int>       d_num_runs_out,
                      int                   op = 0)
     {
     }
@@ -221,65 +236,59 @@ class DeviceReduce : public LuisaModule
     }
 
   private:
-    inline luisa::compute::Int conflict_free_offset(luisa::compute::Int i)
-    {
-        return i >> m_log_mem_banks;
-    }
-
-    // Callable create_index_key_value_pair = []()
-
     template <NumericT Type4Byte>
     void compile(Device& device)
     {
 
         const auto n_blocks        = m_block_size;
         size_t     shared_mem_size = m_shared_mem_size;
+
         // for construct key value pair
-        luisa::unique_ptr<ConstructKVPShaderT<Type4Byte>> ms_construct_key_value_pair_shader =
-            nullptr;
+        luisa::unique_ptr<ArgConstructShaderT<Type4Byte>> ms_arg_construct_shader = nullptr;
         lazy_compile(device,
-                     ms_construct_key_value_pair_shader,
-                     [&](BufferVar<Type4Byte> arr_in, BufferVar<KVTP<Type4Byte>> g_kv_out) noexcept
+                     ms_arg_construct_shader,
+                     [&](BufferVar<Type4Byte> arr_in,
+                         BufferVar<IndexValuePairT<Type4Byte>> g_kv_out) noexcept
                      {
                          set_block_size(n_blocks);
                          Int global_id =
                              Int(block_id().x * block_size().x + thread_id().x);
 
-                         Var<KVTP<Type4Byte>> initial{0, 0};
-                         initial.index = global_id;
+                         Var<IndexValuePairT<Type4Byte>> initial{0, 0};
+                         initial.key   = global_id;
                          initial.value = arr_in.read(global_id);
                          g_kv_out.write(global_id, initial);
                      });
-        ms_kvp_construct_map.try_emplace(
+        ms_arg_construct_map.try_emplace(
             luisa::string{luisa::compute::Type::of<Type4Byte>()->description()},
-            std::move(ms_construct_key_value_pair_shader));
+            std::move(ms_arg_construct_shader));
 
 
-        luisa::unique_ptr<AssignKVPShaderT<Type4Byte>> ms_kvp_assign_shader = nullptr;
+        luisa::unique_ptr<ArgAssignShaderT<Type4Byte>> ms_arg_assign_shader = nullptr;
         lazy_compile(device,
-                     ms_kvp_assign_shader,
-                     [&](BufferVar<KVTP<Type4Byte>> kvp_in,
-                         BufferVar<Type4Byte>       value_out,
-                         BufferVar<int>             index_out) noexcept
+                     ms_arg_assign_shader,
+                     [&](BufferVar<IndexValuePairT<Type4Byte>> kvp_in,
+                         BufferVar<Type4Byte>                  value_out,
+                         BufferVar<int> index_out) noexcept
                      {
                          set_block_size(n_blocks);
                          Int global_id =
                              Int(block_id().x * block_size().x + thread_id().x);
 
-                         Var<KVTP<Type4Byte>> kvp = kvp_in.read(global_id);
-                         index_out.write(global_id, kvp.index);
+                         Var<IndexValuePairT<Type4Byte>> kvp = kvp_in.read(global_id);
+                         index_out.write(global_id, kvp.key);
                          value_out.write(global_id, kvp.value);
                      });
-        ms_kvp_assign_map.try_emplace(
+        ms_arg_assign_map.try_emplace(
             luisa::string{luisa::compute::Type::of<Type4Byte>()->description()},
-            std::move(ms_kvp_assign_shader));
+            std::move(ms_arg_assign_shader));
 
         // for reduce
         auto load_shared_chunk_from_mem_op = [&](SmemTypePtr<Type4Byte>& s_data,
                                                  BufferVar<Type4Byte>& g_idata,
                                                  Int                   n,
-                                                 Int& baseIndex,
-                                                 Int  op)
+                                                 Int baseIndex,
+                                                 Int op)
         {
             Int thread_id_x = Int(thread_id().x);
             Int block_id_x  = Int(block_id().x);
@@ -324,7 +333,7 @@ class DeviceReduce : public LuisaModule
             (*s_data)[bi + bank_offset_b] = data_bi;
         };
 
-        auto reduce_op = [&](SmemTypePtr<Type4Byte>& s_data, Int n, Int op)
+        auto block_reduce_op = [&](SmemTypePtr<Type4Byte>& s_data, Int n, Int op)
         {
             Int thid   = Int(thread_id().x);
             Int stride = def(1);
@@ -391,7 +400,8 @@ class DeviceReduce : public LuisaModule
                 block_index = Int(block_id().x);
             };
             // build the op in place up the tree
-            reduce_op(s_data, n, op);
+            block_reduce_op(s_data, n, op);
+            // BlockReduce<Type4Byte>(s_data).Reduce(n, op);
             clear_last_element(1, s_data, block_sums, block_index);
         };
         //  reduce
@@ -409,8 +419,6 @@ class DeviceReduce : public LuisaModule
                          Int ai, bi, men_ai, men_bi, bank_offset_a, bank_offset_b;
                          Int block_id_x  = Int(block_id().x);
                          Int block_dim_x = Int(block_size_x());
-
-
                          SmemTypePtr<Type4Byte> s_data =
                              new SmemType<Type4Byte>{shared_mem_size};
 
@@ -427,11 +435,12 @@ class DeviceReduce : public LuisaModule
             std::move(ms_reduce));
 
 
-        auto load_shared_chunk_from_mem_op_arg = [&](SmemTypePtr<KVTP<Type4Byte>>& s_data,
-                                                     BufferVar<KVTP<Type4Byte>>& g_idata,
-                                                     Int  n,
-                                                     Int& baseIndex,
-                                                     Int  op)
+        auto load_shared_chunk_from_mem_op_arg =
+            [&](SmemTypePtr<IndexValuePairT<Type4Byte>>& s_data,
+                BufferVar<IndexValuePairT<Type4Byte>>&   g_idata,
+                Int                                      n,
+                Int&                                     baseIndex,
+                Int                                      op)
         {
             Int thread_id_x = Int(thread_id().x);
             Int block_id_x  = Int(block_id().x);
@@ -447,20 +456,20 @@ class DeviceReduce : public LuisaModule
             Int bank_offset_a = conflict_free_offset(ai);
             Int bank_offset_b = conflict_free_offset(bi);
 
-            Var<KVTP<Type4Byte>> initial{0, 0};
+            Var<IndexValuePairT<Type4Byte>> initial{0, 0};
             $if(op == 0)
             {
-                initial.index = thread_id_x;
+                initial.key   = thread_id_x;
                 initial.value = std::numeric_limits<Type4Byte>::max();
             }
             $elif(op == 1)
             {
-                initial.index = thread_id_x;
+                initial.key   = thread_id_x;
                 initial.value = std::numeric_limits<Type4Byte>::min();
             };
 
-            Var<KVTP<Type4Byte>> data_ai = initial;
-            Var<KVTP<Type4Byte>> data_bi = initial;
+            Var<IndexValuePairT<Type4Byte>> data_ai = initial;
+            Var<IndexValuePairT<Type4Byte>> data_bi = initial;
 
             $if(ai < n)
             {
@@ -475,25 +484,28 @@ class DeviceReduce : public LuisaModule
         };
 
         // arg reduce
-        auto min_arg_op = [&](Var<KVTP<Type4Byte>>& a, Var<KVTP<Type4Byte>>& b) noexcept
+        auto min_arg_op = [&](Var<IndexValuePairT<Type4Byte>>& a,
+                              Var<IndexValuePairT<Type4Byte>>& b) noexcept
         {
-            $if(b.value < a.value | (b.value == a.value & b.index < a.index))
+            $if(b.value < a.value | (b.value == a.value & b.key < a.key))
             {
                 a = b;
             };
             return a;
         };
 
-        auto max_arg_op = [&](Var<KVTP<Type4Byte>>& a, Var<KVTP<Type4Byte>>& b) noexcept
+        auto max_arg_op = [&](Var<IndexValuePairT<Type4Byte>>& a,
+                              Var<IndexValuePairT<Type4Byte>>& b) noexcept
         {
-            $if(b.value > a.value | (b.value == a.value & b.index < a.index))
+            $if(b.value > a.value | (b.value == a.value & b.key < a.key))
             {
                 a = b;
             };
             return a;
         };
 
-        auto arg_reduce_op = [&](SmemTypePtr<KVTP<Type4Byte>>& s_data, Int n, Int op)
+        auto arg_reduce_op =
+            [&](SmemTypePtr<IndexValuePairT<Type4Byte>>& s_data, Int n, Int op)
         {
             Int thid   = Int(thread_id().x);
             Int stride = def(1);
@@ -525,8 +537,8 @@ class DeviceReduce : public LuisaModule
         };
 
         auto clear_last_element_arg = [&](Int storeSum,
-                                          SmemTypePtr<KVTP<Type4Byte>>& s_data,
-                                          BufferVar<KVTP<Type4Byte>>& g_blockSums,
+                                          SmemTypePtr<IndexValuePairT<Type4Byte>>& s_data,
+                                          BufferVar<IndexValuePairT<Type4Byte>>& g_blockSums,
                                           Int blockIndex)
         {
             Int thid = Int(thread_id().x);
@@ -542,15 +554,15 @@ class DeviceReduce : public LuisaModule
                 };
                 // zero the last element in the scan so it will propagate back to the front
                 (*s_data)[index].value = Type4Byte(0);
-                (*s_data)[index].index = 0;
+                (*s_data)[index].key   = 0;
             };
         };
 
-        auto arg_reduce_block = [&](SmemTypePtr<KVTP<Type4Byte>>& s_data,
-                                    BufferVar<KVTP<Type4Byte>>&   block_sums,
-                                    Int                           block_index,
-                                    Int                           n,
-                                    Int                           op)
+        auto arg_reduce_block = [&](SmemTypePtr<IndexValuePairT<Type4Byte>>& s_data,
+                                    BufferVar<IndexValuePairT<Type4Byte>>& block_sums,
+                                    Int block_index,
+                                    Int n,
+                                    Int op)
         {
             $if(block_index == 0)
             {
@@ -563,20 +575,20 @@ class DeviceReduce : public LuisaModule
         luisa::unique_ptr<ArgReduceShaderT<Type4Byte>> ms_arg_reduce = nullptr;
         lazy_compile(device,
                      ms_arg_reduce,
-                     [&](BufferVar<KVTP<Type4Byte>> g_idata,
-                         BufferVar<KVTP<Type4Byte>> g_block_sums,
-                         Int                        n,
-                         Int                        block_index,
-                         Int                        base_index,
-                         Int                        op) noexcept
+                     [&](BufferVar<IndexValuePairT<Type4Byte>> g_idata,
+                         BufferVar<IndexValuePairT<Type4Byte>> g_block_sums,
+                         Int                                   n,
+                         Int                                   block_index,
+                         Int                                   base_index,
+                         Int                                   op) noexcept
                      {
                          set_block_size(n_blocks);
                          Int ai, bi, men_ai, men_bi, bank_offset_a, bank_offset_b;
                          Int block_id_x  = Int(block_id().x);
                          Int block_dim_x = Int(block_size_x());
 
-                         SmemTypePtr<KVTP<Type4Byte>> s_data =
-                             new SmemType<KVTP<Type4Byte>>{shared_mem_size};
+                         SmemTypePtr<IndexValuePairT<Type4Byte>> s_data =
+                             new SmemType<IndexValuePairT<Type4Byte>>{shared_mem_size};
 
                          $if(base_index == 0)
                          {
@@ -591,6 +603,57 @@ class DeviceReduce : public LuisaModule
         // reduce by key
     }
 
+
+    template <NumericT KeyType, NumericT ValueType>
+    void compile_reduce_by_key(Device& device)
+    {
+        using KVP = KeyValuePair<KeyType, ValueType>;
+        // to be implemented
+        const auto n_blocks        = m_block_size;
+        size_t     shared_mem_size = m_shared_mem_size;
+
+        // for construct/assign key value pair
+        luisa::unique_ptr<ConstructKVPShaderT<KeyType, ValueType>> ms_kvp_construct_shader =
+            nullptr;
+        lazy_compile(device,
+                     ms_kvp_construct_shader,
+                     [&](BufferVar<KeyType>   arr_key_in,
+                         BufferVar<ValueType> arr_value_in,
+                         BufferVar<KVP>       g_kv_out) noexcept
+                     {
+                         set_block_size(n_blocks);
+                         Int global_id =
+                             Int(block_id().x * block_size().x + thread_id().x);
+                         Var<KVP> initial{arr_key_in.read(global_id),
+                                          arr_value_in.read(global_id)};
+                         g_kv_out.write(global_id, initial);
+                     });
+        ms_kvp_construct_shader.try_emplace(
+            {luisa::string{luisa::compute::Type::of<KeyType>()->description()},
+             luisa::string{luisa::compute::Type::of<ValueType>()->description()}},
+            std::move(ms_kvp_construct_shader));
+
+        luisa::unique_ptr<ConstructKVPShaderT<KeyType, ValueType>> ms_kvp_assign_shader = nullptr;
+        lazy_compile(device,
+                     ms_kvp_assign_shader,
+                     [&](BufferVar<KVP>       g_kv_in,
+                         BufferVar<KeyType>   arr_key_out,
+                         BufferVar<ValueType> arr_value_in) noexcept
+                     {
+                         set_block_size(n_blocks);
+                         Int global_id =
+                             Int(block_id().x * block_size().x + thread_id().x);
+                         Var<KVP> key_value_pair = g_kv_in.read(global_id);
+                         arr_key_out.write(global_id, key_value_pair.key);
+                         arr_value_in.write(global_id, key_value_pair.value);
+                     });
+        ms_kvp_assign_map.try_emplace(
+            {luisa::string{luisa::compute::Type::of<KeyType>()->description()},
+             luisa::string{luisa::compute::Type::of<ValueType>()->description()}},
+            std::move(ms_kvp_assign_shader));
+
+        // for reduce by key
+    }
 
     template <NumericT Type4Byte>
     void reduce_array_recursive(luisa::compute::CommandList& cmdlist,
@@ -682,13 +745,13 @@ class DeviceReduce : public LuisaModule
 
     template <NumericT Type4Byte>
     void arg_reduce_array_recursive(luisa::compute::CommandList& cmdlist,
-                                    BufferView<KVTP<Type4Byte>>  temp_storage,
-                                    BufferView<KVTP<Type4Byte>>  arr_in,
-                                    BufferView<KVTP<Type4Byte>>  arr_out,
-                                    int                          num_elements,
-                                    int                          offset,
-                                    int                          level,
-                                    int                          op) noexcept
+                                    BufferView<IndexValuePairT<Type4Byte>> temp_storage,
+                                    BufferView<IndexValuePairT<Type4Byte>> arr_in,
+                                    BufferView<IndexValuePairT<Type4Byte>> arr_out,
+                                    int num_elements,
+                                    int offset,
+                                    int level,
+                                    int op) noexcept
     {
         int block_size = m_block_size;
         int num_blocks = imax(1, (int)ceil((float)num_elements / (2.0f * block_size)));
@@ -723,7 +786,7 @@ class DeviceReduce : public LuisaModule
             }
         }
         size_t size_elements = temp_storage.size() - offset;
-        BufferView<KVTP<Type4Byte>> temp_buffer_level =
+        BufferView<IndexValuePairT<Type4Byte>> temp_buffer_level =
             temp_storage.subview(offset, size_elements);
         // execute the scan
         auto key = luisa::compute::Type::of<Type4Byte>()->description();
@@ -767,13 +830,55 @@ class DeviceReduce : public LuisaModule
         }
     };
 
+    template <NumericT KeyType, NumericT ValueType>
+    void reduce_by_key_array_recursive(luisa::compute::CommandList& cmdlist,
+                                       int num_elements,
+                                       int offset,
+                                       int level,
+                                       int op)
+    {
+        int block_size = m_block_size;
+        int num_blocks = imax(1, (int)ceil((float)num_elements / (2.0f * block_size)));
+        int num_threads;
+
+        if(num_blocks > 1)
+        {
+            num_threads = block_size;
+        }
+        else if(is_power_of_two(num_elements))
+        {
+            num_threads = num_elements / 2;
+        }
+        else
+        {
+            num_threads = floor_pow_2(num_elements);
+        }
+
+        int num_elements_per_block = num_threads * 2;
+        int num_elements_last_block = num_elements - (num_blocks - 1) * num_elements_per_block;
+        int num_threads_last_block = imax(1, num_elements_last_block / 2);
+        int np2_last_block         = 0;
+        int shared_mem_last_block  = 0;
+
+        if(num_elements_last_block != num_elements_per_block)
+        {
+            // NOT POWER OF 2
+            np2_last_block = 1;
+            if(!is_power_of_two(num_elements_last_block))
+            {
+                num_threads_last_block = floor_pow_2(num_elements_last_block);
+            }
+        }
+    };
 
     luisa::unordered_map<luisa::string, luisa::shared_ptr<luisa::compute::Resource>> ms_reduce_map;
+    // for arg reduce
+    luisa::unordered_map<luisa::string, luisa::shared_ptr<luisa::compute::Resource>> ms_arg_construct_map;
+    luisa::unordered_map<luisa::string, luisa::shared_ptr<luisa::compute::Resource>> ms_arg_assign_map;
     luisa::unordered_map<luisa::string, luisa::shared_ptr<luisa::compute::Resource>> ms_arg_reduce_map;
-    luisa::unordered_map<luisa::string, luisa::shared_ptr<luisa::compute::Resource>> ms_reduce_by_key_map;
-
-    // for key value pair
-    luisa::unordered_map<luisa::string, luisa::shared_ptr<luisa::compute::Resource>> ms_kvp_construct_map;
-    luisa::unordered_map<luisa::string, luisa::shared_ptr<luisa::compute::Resource>> ms_kvp_assign_map;
+    // for reduce by key
+    luisa::unordered_map<std::pair<luisa::string, luisa::string>, luisa::shared_ptr<luisa::compute::Resource>> ms_kvp_construct_map;
+    luisa::unordered_map<std::pair<luisa::string, luisa::string>, luisa::shared_ptr<luisa::compute::Resource>> ms_kvp_assign_map;
+    luisa::unordered_map<std::pair<luisa::string, luisa::string>, luisa::shared_ptr<luisa::compute::Resource>> ms_reduce_by_key_map;
 };
 }  // namespace luisa::parallel_primitive

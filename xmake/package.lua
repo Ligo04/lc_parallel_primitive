@@ -3,7 +3,7 @@ package("luisa-compute")
     set_description("High-Performance Rendering Framework on Stream Architectures")
     set_license("Apache-2.0")
 
-    set_sourcedir("C:/Ligo/Project/rbs/LuisaCompute")
+    set_sourcedir("C:/Ligo/Project/pubuipc/LuisaCompute")
 
     add_configs("cuda", {description = "Enable CUDA backend", default = false, type = "boolean"})
     add_configs("vulkan", {description = "Enable Vulkan backend", default = false, type = "boolean"})

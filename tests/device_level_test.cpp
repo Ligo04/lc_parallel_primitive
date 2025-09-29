@@ -19,7 +19,8 @@ using namespace boost::ut;
 int main(int argc, char* argv[])
 {
 
-    log_level_info();
+    // log_level_info();
+    log_level_verbose();
 
     Context context{argv[1]};
 #ifdef _WIN32
@@ -126,6 +127,5 @@ int main(int argc, char* argv[])
                 - input_data.begin())
                == index_result[0]);
     };
-
     return 0;
 }

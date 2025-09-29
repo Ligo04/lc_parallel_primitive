@@ -8,17 +8,17 @@
 
 #pragma once
 #include <lc_parallel_primitive/common/type_trait.h>
-#include <lc_parallel_primitive/common/template_struct.h>
+#include <luisa/dsl/struct.h>
 
-template <std::integral IndexType, NumericT ValueType>
+template <NumericT KeyType, NumericT ValueType>
 struct KeyValuePair
 {
-    IndexType index;
+    KeyType   key;
     ValueType value;
 };
 
 #define LUISA_KEY_VALUE_PAIR_TEMPLATE()                                        \
-    template <std::integral IndexType, NumericT ValueType>
-#define LUISA_KEY_VALUE_PAIR() KeyValuePair<IndexType, ValueType>
+    template <NumericT KeyType, NumericT ValueType>
+#define LUISA_KEY_VALUE_PAIR() KeyValuePair<KeyType, ValueType>
 
-LUISA_TEMPLATE_STRUCT(LUISA_KEY_VALUE_PAIR_TEMPLATE, LUISA_KEY_VALUE_PAIR, index, value){};
+LUISA_TEMPLATE_STRUCT(LUISA_KEY_VALUE_PAIR_TEMPLATE, LUISA_KEY_VALUE_PAIR, key, value){};
