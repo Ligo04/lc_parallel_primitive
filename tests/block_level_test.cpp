@@ -1,12 +1,13 @@
 
 #include "lc_parallel_primitive/block/block_reduce.h"
+#include "lc_parallel_primitive/block/block_scan.h"
 #include "lc_parallel_primitive/runtime/core.h"
 #include "luisa/dsl/builtin.h"
 #include "luisa/dsl/var.h"
 #include "luisa/runtime/shader.h"
 #include <lc_parallel_primitive/parallel_primitive.h>
 #include <boost/ut.hpp>
-#include <random>
+#include <numeric>
 using namespace luisa;
 using namespace luisa::compute;
 using namespace luisa::parallel_primitive;
@@ -14,7 +15,6 @@ using namespace boost::ut;
 
 int main(int argc, char* argv[])
 {
-    // log_level_info();
     log_level_verbose();
 
     Context context{argv[1]};
@@ -39,8 +39,6 @@ int main(int argc, char* argv[])
     {
         input_data[i] = i;
     }
-    // std::mt19937 rng(123);  // 固定种子
-    // std::shuffle(input_data.begin(), input_data.end(), rng);
 
     stream << in_buffer.copy_from(input_data.data()) << synchronize();
 
@@ -69,9 +67,55 @@ int main(int argc, char* argv[])
     LUISA_INFO("Result (0+1+2+...+255) : {}  (255+255+257+...+511):{}",
                (255 * 256) / 2,
                (511 * 512) / 2 - (255 * 256) / 2);
-    LUISA_INFO("Block Reduce: {} {}", result[0], result[1]);
+    for(auto& data : result)
+    {
+        LUISA_INFO("Block Reduce: {}", data);
+    }
 
-    // Kernel1D block_reduce_test =
-    //     [&](BufferVar<float> source, BufferVar<float> result, Var<float> x) noexcept
-    // { BlockReduce<float>().Sum(source, result, x); };
+    stream << in_buffer.copy_from(input_data.data()) << synchronize();
+    auto               scan_out_buffer = device.create_buffer<int32>(N);
+    std::vector<int32> scan_result(N);
+    luisa::unique_ptr<Shader<1, Buffer<int>, Buffer<int>, int>> block_scan_shader = nullptr;
+    lazy_compile(device,
+                 block_scan_shader,
+                 [&](BufferVar<int> arr_in, BufferVar<int> arr_out, Int n) noexcept
+                 {
+                     luisa::compute::set_block_size(BLOCKSIZE);
+                     Int thid = Int(block_size().x * block_id().x + thread_id().x);
+
+                     Int thread_data = def(0);
+                     $if(thid < n)
+                     {
+                         thread_data = arr_in.read(thid);
+                     };
+                     Int scanned_data;
+                     BlockScan<int>().ExclusiveSum(thread_data, scanned_data);
+                     $if(thid < n)
+                     {
+                         arr_out.write(thid, scanned_data);
+                     };
+                 });
+
+
+    stream << (*block_scan_shader)(in_buffer.view(), scan_out_buffer.view(), N).dispatch(N);
+    stream << scan_out_buffer.copy_to(scan_result.data()) << synchronize();  // 输出结果
+
+    std::vector<int> exclusive_scan_result(input_data.size());
+    std::exclusive_scan(
+        input_data.begin(), input_data.end(), exclusive_scan_result.begin(), 0);
+
+
+    LUISA_INFO("exclusive_scan Result:");
+    for(auto& data : exclusive_scan_result)
+    {
+        std::cout << data << " ";
+    }
+    std::cout << std::endl;
+
+    LUISA_INFO("Scan Result:");
+    for(auto& data : scan_result)
+    {
+        std::cout << data << " ";
+    }
+    std::cout << std::endl;
 }

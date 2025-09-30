@@ -17,7 +17,6 @@ namespace luisa::parallel_primitive
 
 enum class DefaultBlockScanAlgorithm
 {
-    NAIVE,
     SHARED_MEMORY,
     WARP_SHUFFLE
 };
@@ -25,141 +24,140 @@ template <NumericT Type4Byte, size_t BlockSize = 256, DefaultBlockScanAlgorithm 
 class BlockScan : public LuisaModule
 {
 
-    using ScanOpCallable = luisa::compute::Callable<void()>;
-
   public:
-    BlockScan(SmemType<Type4Byte> temp_buffer)
-        : m_shared_mem(temp_buffer)
+    BlockScan()
     {
+        if(Algorithm == DefaultBlockScanAlgorithm::SHARED_MEMORY)
+        {
+            m_shared_mem = new SmemType<Type4Byte>{BlockSize};
+        };
     }
     ~BlockScan() = default;
 
   public:
-    template <typename ScanOp>
-    ScanOpCallable ExclusiveScan(BufferView<Type4Byte> d_in, BufferView<Type4Byte> d_out, ScanOp op)
+    template <typename ScanOp = luisa::compute::Callable<Var<Type4Byte>(const Var<Type4Byte>&, Var<Type4Byte>&)>>
+    void ExclusiveScan(const Var<Type4Byte>& thread_data, Var<Type4Byte>& output_block_sum, ScanOp op)
     {
-        return [&]()
+        using namespace luisa::compute;
+        luisa::compute::set_block_size(BlockSize);
+        $if(Algorithm == DefaultBlockScanAlgorithm::SHARED_MEMORY)
         {
+            Int block_size_ = Int(BlockSize);
+            Int thid        = Int(thread_id().x);
+            Int global_id   = Int(block_id().x * block_size_x() + thid);
 
-        };
-    }
-    template <typename ScanOp>
-    ScanOpCallable InclusiveScan(BufferView<Type4Byte> d_in, BufferView<Type4Byte> d_out, ScanOp op)
-    {
-        return [&]() {};
-    }
+            (*m_shared_mem)[thid] = thread_data;
+            sync_block();
 
-
-    ScanOpCallable ExclusiveSum(BufferView<Type4Byte> d_in, BufferView<Type4Byte> d_out)
-    {
-        return [&]()
-        {
-            using namespace luisa::compute;
-
-            luisa::compute::set_block_size(BlockSize);
-
-            $if(Algorithm == DefaultBlockScanAlgorithm::SHARED_MEMORY)
+            // up-sweep
+            UInt offset = def(1);
+            $while(offset < block_size_)
             {
-                Int block_size_ = Int(block_size());
-                m_shared_mem    = SmemType<Type4Byte>(BlockSize);
-                Int thid        = Int(thread_id().x);
-                Int global_id   = Int(block_id().x * block_size_ + thid);
-
-                m_shared_mem[thid] = d_in.read(global_id);
+                UInt index = (thid + 1) * offset * 2 - 1;
+                $if(index < block_size_)
+                {
+                    (*m_shared_mem)[index] =
+                        op((*m_shared_mem)[index], (*m_shared_mem)[index - offset]);
+                };
+                offset <<= 1;
                 sync_block();
-
-                // up-sweep
-                Int offset = def(1);
-                $for(offset, 1, block_size_, offset * 2)
-                {
-                    UInt index = (thid + 1) * offset * 2 - 1;
-                    $if(index < block_size_)
-                    {
-                        m_shared_mem[index] += m_shared_mem[index - offset];
-                    };
-                    sync_block();
-                };
-
-                $if(thid == 0)
-                {
-                    // clear the last element for exclusive scan
-                    m_shared_mem[block_size_ - 1] = 0;
-                };
-                sync_block();
-
-                // down-sweep
-                $for(offset, block_size_ >> 1, 0, offset / 2)
-                {
-                    UInt index = (thid + 1) * offset * 2 - 1;
-                    $if(index < block_size_)
-                    {
-                        m_shared_mem[index] += m_shared_mem[index - offset];
-                    };
-                    sync_block();
-                };
-
-                d_out.write(global_id, m_shared_mem[thid]);
-            }
-            $else{
-                // LUISA_ERROR("Not Implemented Yet!");
             };
-        };
-    }
-    ScanOpCallable InclusiveSum(BufferView<Type4Byte> d_in, BufferView<Type4Byte> d_out)
-    {
-        return [&]()
-        {
-            using namespace luisa::compute;
-
-            luisa::compute::set_block_size(BlockSize);
-
-            $if(Algorithm == DefaultBlockScanAlgorithm::SHARED_MEMORY)
+            $if(thid == 0)
             {
-                Int block_size_ = Int(block_size());
-                m_shared_mem    = SmemType<Type4Byte>(BlockSize);
-                Int thid        = Int(thread_id().x);
-                Int global_id   = Int(block_id().x * block_size_ + thid);
-
-                m_shared_mem[thid] = d_in.read(global_id);
+                // clear the last element for exclusive scan
+                (*m_shared_mem)[block_size_ - 1] = 0;
+            };
+            sync_block();
+            // down-sweep
+            offset = def(block_size_ >> 1);
+            $while(offset > 0)
+            {
+                UInt index = (thid + 1) * offset * 2 - 1;
+                $if(index < block_size_)
+                {
+                    // swap
+                    auto temp = (*m_shared_mem)[index - offset];
+                    (*m_shared_mem)[index - offset] = (*m_shared_mem)[index];
+                    (*m_shared_mem)[index] = op((*m_shared_mem)[index], temp);
+                };
+                offset >>= 1;
                 sync_block();
+            };
 
-                // up-sweep
-                Int offset = def(1);
-                $for(offset, 1, block_size_, offset * 2)
-                {
-                    UInt index = (thid + 1) * offset * 2 - 1;
-                    $if(index < block_size_)
-                    {
-                        m_shared_mem[index] += m_shared_mem[index - offset];
-                    };
-                    sync_block();
-                };
+            output_block_sum = (*m_shared_mem)[thid];
+        }
+        $else{};
+    }
+    template <typename ScanOp = luisa::compute::Callable<Var<Type4Byte>(const Var<Type4Byte>&, Var<Type4Byte>&)>>
+    void InclusiveScan(const Var<Type4Byte>& thread_data, Var<Type4Byte>& output_block_sum, ScanOp op)
+    {
+        using namespace luisa::compute;
+        luisa::compute::set_block_size(BlockSize);
+        $if(Algorithm == DefaultBlockScanAlgorithm::SHARED_MEMORY)
+        {
+            Int block_size_ = Int(BlockSize);
+            Int thid        = Int(thread_id().x);
+            Int global_id   = Int(block_id().x * block_size_x() + thid);
 
-                $if(thid == 0)
+            (*m_shared_mem)[thid] = thread_data;
+            sync_block();
+
+            // up-sweep
+            UInt offset = def(1);
+            $while(offset < block_size_)
+            {
+                UInt index = (thid + 1) * offset * 2 - 1;
+                $if(index < block_size_)
                 {
-                    // clear the last element for exclusive scan
-                    m_shared_mem[block_size_ - 1] = 0;
+                    (*m_shared_mem)[index] =
+                        op((*m_shared_mem)[index], (*m_shared_mem)[index - offset]);
                 };
+                offset <<= 1;
                 sync_block();
-
-                // down-sweep
-                $for(offset, block_size_ >> 1, 0, offset / 2)
+            };
+            $if(thid == 0)
+            {
+                // clear the last element for exclusive scan
+                (*m_shared_mem)[block_size_ - 1] = 0;
+            };
+            sync_block();
+            // down-sweep
+            offset = def(block_size_ >> 1);
+            $while(offset > 0)
+            {
+                UInt index = (thid + 1) * offset * 2 - 1;
+                $if(index < block_size_)
                 {
-                    UInt index = (thid + 1) * offset * 2 - 1;
-                    $if(index < block_size_)
-                    {
-                        m_shared_mem[index] += m_shared_mem[index - offset];
-                    };
-                    sync_block();
+                    // swap
+                    auto temp = (*m_shared_mem)[index - offset];
+                    (*m_shared_mem)[index - offset] = (*m_shared_mem)[index];
+                    (*m_shared_mem)[index] = op((*m_shared_mem)[index], temp);
                 };
+                offset >>= 1;
+                sync_block();
+            };
 
-                d_out.write(global_id, m_shared_mem[thid] + d_in.read(global_id));
-            }
-            $else{};
-        };
+            output_block_sum = op((*m_shared_mem)[thid], thread_data);
+        }
+        $else{};
+    }
+
+    void ExclusiveSum(const Var<Type4Byte>& thread_data, Var<Type4Byte>& output_block_sum)
+    {
+        return ExclusiveScan(thread_data,
+                             output_block_sum,
+                             [](const Var<Type4Byte>& a, const Var<Type4Byte>& b)
+                             { return a + b; });
+    }
+    void InclusiveSum(const Var<Type4Byte>& thread_data, Var<Type4Byte>& output_block_sum)
+    {
+        return InclusiveScan(thread_data,
+                             output_block_sum,
+                             [](const Var<Type4Byte>& a, const Var<Type4Byte>& b)
+                             { return a + b; });
     }
 
   private:
-    SmemType<Type4Byte> m_shared_mem;
+    SmemTypePtr<Type4Byte> m_shared_mem;
 };
 }  // namespace luisa::parallel_primitive

@@ -26,8 +26,6 @@ enum class DefaultBlockReduceAlgorithm
 template <NumericT Type4Byte, size_t BlockSize = 256, DefaultBlockReduceAlgorithm Algorithm = DefaultBlockReduceAlgorithm::SHARED_MEMORY>
 class BlockReduce : public LuisaModule
 {
-    using ReduceOpCallable = luisa::compute::Callable<Var<Type4Byte>()>;
-
   public:
     BlockReduce()
     {
@@ -39,7 +37,7 @@ class BlockReduce : public LuisaModule
     ~BlockReduce() = default;
 
   public:
-    template <typename ReduceOp = compute::Callable<Var<Type4Byte>(const Var<Type4Byte>&, const Var<Type4Byte>&)>>
+    template <typename ReduceOp = luisa::compute::Callable<Var<Type4Byte>(const Var<Type4Byte>&, const Var<Type4Byte>&)>>
     Var<Type4Byte> Reduce(const Var<Type4Byte>& thread_data, ReduceOp op)
     {
         Var<Type4Byte> result = Type4Byte(0);
@@ -84,38 +82,23 @@ class BlockReduce : public LuisaModule
 
     Var<Type4Byte> Sum(const Var<Type4Byte>& d_in)
     {
-        return Reduce(d_in, sum_op);
+        return Reduce(d_in,
+                      [](const Var<Type4Byte>& a, const Var<Type4Byte>& b)
+                      { return a + b; });
     }
 
     Var<Type4Byte> Max(const Var<Type4Byte>& d_in)
     {
-        return Reduce(d_in, max_op);
+        return Reduce(d_in, luisa::compute::max);
     }
 
     Var<Type4Byte> Min(const Var<Type4Byte>& d_in)
     {
-        auto min_op = [](const Var<Type4Byte>& a, const Var<Type4Byte>& b) -> Var<Type4Byte>
-        { return luisa::compute::min(a, b); };
-        return Reduce(d_in, min_op);
+        return Reduce(d_in, luisa::compute::min);
     }
 
 
   private:
     SmemTypePtr<Type4Byte> m_shared_mem;
-
-    static inline Var<Type4Byte> sum_op(const Var<Type4Byte>& a, const Var<Type4Byte>& b)
-    {
-        return a + b;
-    }
-
-    static inline auto max_op(const Var<Type4Byte>& a, const Var<Type4Byte>& b)
-    {
-        return luisa::compute::max(a, b);
-    }
-
-    static inline auto min_op(const Var<Type4Byte>& a, const Var<Type4Byte>& b)
-    {
-        return luisa::compute::min(a, b);
-    };
 };
 }  // namespace luisa::parallel_primitive

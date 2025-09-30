@@ -137,6 +137,4 @@ class LuisaModule : public vstd::IOperatorNewBase
         return i >> m_log_mem_banks;
     }
 };
-
-
 }  // namespace luisa::parallel_primitive
