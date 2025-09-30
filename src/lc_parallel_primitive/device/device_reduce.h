@@ -205,7 +205,6 @@ class DeviceReduce : public LuisaModule
             reinterpret_cast<ArgAssignShaderT<Type4Byte>*>(&(*ms_arg_assign_it->second));
         cmdlist << (*ms_arg_assign_ptr)(d_out_kv.view(), d_out, d_index_out)
                        .dispatch(d_index_out.size());
-        // Stream stream = m_device.create_stream();
         stream << cmdlist.commit() << synchronize();
     }
 

@@ -8,6 +8,7 @@
 #pragma once
 
 #include "luisa/dsl/builtin.h"
+#include "luisa/dsl/sugar.h"
 #include <lc_parallel_primitive/common/type_trait.h>
 #include <luisa/dsl/func.h>
 #include <lc_parallel_primitive/runtime/core.h>
@@ -18,7 +19,6 @@ namespace luisa::parallel_primitive
 {
 enum class DefaultBlockReduceAlgorithm
 {
-    NAIVE,
     SHARED_MEMORY,
     WARP_SHUFFLE
 };
@@ -29,87 +29,91 @@ class BlockReduce : public LuisaModule
     using ReduceOpCallable = luisa::compute::Callable<Var<Type4Byte>()>;
 
   public:
-    BlockReduce(SmemType<Type4Byte>& temp_buffer)
-        : m_shared_mem(temp_buffer)
+    BlockReduce()
     {
-    }
+        if(Algorithm == DefaultBlockReduceAlgorithm::SHARED_MEMORY)
+        {
+            m_shared_mem = new SmemType<Type4Byte>{BlockSize};
+        };
+    };
     ~BlockReduce() = default;
 
-  private:
-    template <typename ReduceOp>
-    ReduceOpCallable Reduce(const Var<Type4Byte>& d_in, ReduceOp op)
+  public:
+    template <typename ReduceOp = compute::Callable<Var<Type4Byte>(const Var<Type4Byte>&, const Var<Type4Byte>&)>>
+    Var<Type4Byte> Reduce(const Var<Type4Byte>& thread_data, ReduceOp op)
     {
-        return [&]()
+        Var<Type4Byte> result = Type4Byte(0);
+        $if(Algorithm == DefaultBlockReduceAlgorithm::SHARED_MEMORY)
         {
             using namespace luisa::compute;
             luisa::compute::set_block_size(BlockSize);
-
-            $if(Algorithm == DefaultBlockReduceAlgorithm::SHARED_MEMORY)
+            Int thid              = Int(thread_id().x);
+            (*m_shared_mem)[thid] = thread_data;
+            sync_block();
+            UInt stride = BlockSize >> 1;
+            $while(stride > 0)
             {
-                m_shared_mem       = SmemType<Type4Byte>(BlockSize);
-                Int thid           = Int(thread_id().x);
-                m_shared_mem[thid] = d_in;
+                $if(thid < stride)
+                {
+                    (*m_shared_mem)[thid] =
+                        op((*m_shared_mem)[thid], (*m_shared_mem)[thid + stride]);
+                };
                 sync_block();
-
-                Type4Byte result = def(0);
-                UInt      stride = BlockSize >> 1;
-                $while(true)
-                {
-                    $if(thid < stride)
-                    {
-                        m_shared_mem[thid] =
-                            op(m_shared_mem[thid], m_shared_mem[thid + stride]);
-                    };
-                    sync_block();
-                    stride >>= 1;
-                    $if(stride == 0)
-                    {
-                        $break;
-                    };
-                };
-
-                $if(thid == 0)
-                {
-                    result = m_shared_mem[0];
-                };
-                return result;
-            }
-            $elif(Algorithm == DefaultBlockReduceAlgorithm::WARP_SHUFFLE){
-                //TODO implement block-level reduce using warp shuffle
+                stride >>= 1;
             };
+
+            $if(thid == 0)
+            {
+                result = (*m_shared_mem)[0];
+            };
+        }
+        $else
+        {
+            //TODO implement block-level reduce using warp shuffle
+            using namespace luisa::compute;
+            luisa::compute::set_block_size(BlockSize);
+            Int thid    = Int(thread_id().x);
+            Int warp_id = thid / 32;
+            Int lane_id = thid % 32;
+
+            result = thread_data;
+            // block_value =
         };
+        return result;
     };
 
-    ReduceOpCallable Sum(const Var<Type4Byte>& d_in)
+    Var<Type4Byte> Sum(const Var<Type4Byte>& d_in)
     {
-        return [&]() { return this->Reduce(d_in, sum_op); };
+        return Reduce(d_in, sum_op);
     }
 
-    ReduceOpCallable Max(const Var<Type4Byte>& d_in)
+    Var<Type4Byte> Max(const Var<Type4Byte>& d_in)
     {
-        return [&]() { return this->Reduce(d_in, max_op); };
+        return Reduce(d_in, max_op);
     }
 
-    ReduceOpCallable Min(const Var<Type4Byte>& d_in)
+    Var<Type4Byte> Min(const Var<Type4Byte>& d_in)
     {
-        return [&]() { return this->Reduce(d_in, min_op); };
+        auto min_op = [](const Var<Type4Byte>& a, const Var<Type4Byte>& b) -> Var<Type4Byte>
+        { return luisa::compute::min(a, b); };
+        return Reduce(d_in, min_op);
     }
 
 
   private:
-    SmemType<Type4Byte> m_shared_mem;
+    SmemTypePtr<Type4Byte> m_shared_mem;
 
     static inline Var<Type4Byte> sum_op(const Var<Type4Byte>& a, const Var<Type4Byte>& b)
     {
         return a + b;
     }
 
-    static inline Var<Type4Byte> max_op(const Var<Type4Byte>& a, const Var<Type4Byte>& b)
+    static inline auto max_op(const Var<Type4Byte>& a, const Var<Type4Byte>& b)
     {
         return luisa::compute::max(a, b);
     }
 
-    static inline Var<Type4Byte> min_op(const Var<Type4Byte>& a, const Var<Type4Byte>& b)
+    static inline auto min_op(const Var<Type4Byte>& a, const Var<Type4Byte>& b)
     {
         return luisa::compute::min(a, b);
     };

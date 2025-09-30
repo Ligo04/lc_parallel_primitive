@@ -6,4 +6,7 @@
  */
 #pragma once
 #include <lc_parallel_primitive/warp/warp_scan.h>
+#include <lc_parallel_primitive/warp/warp_reduce.h>
+#include <lc_parallel_primitive/block/block_reduce.h>
+#include <lc_parallel_primitive/block/block_scan.h>
 #include <lc_parallel_primitive/device/device_reduce.h>

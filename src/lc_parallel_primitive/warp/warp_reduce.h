@@ -17,44 +17,39 @@ namespace luisa::parallel_primitive
 template <NumericT Type4Byte>
 class WarpReduce : public LuisaModule
 {
-    using ReduceOpCallable = luisa::compute::Callable<Var<Type4Byte>()>;
-
   public:
     WarpReduce() {}
     ~WarpReduce() = default;
 
   public:
     template <typename ReduceOp>
-    ReduceOpCallable Reduce(const Var<Type4Byte>& d_in, ReduceOp op)
+    Var<Type4Byte> Reduce(const Var<Type4Byte>& d_in, ReduceOp op)
     {
-        return [&]
+        using namespace luisa::compute;
+        // TODO: implement warp reduce with op
+        Var<Type4Byte> result = d_in;
+        Int            Offset = 1;
+        $for(Offset, 1, 32, Offset *= 2)
         {
-            using namespace luisa::compute;
-            // TODO: implement warp reduce with op
-            Var<Type4Byte> result = d_in;
-            Int            Offset = 1;
-            $for(Offset, 1, 32, Offset *= 2)
-            {
-                Var<Type4Byte> other = warp_active_bit_xor(result);
-                result               = op(result, other);
-            };
-            return result;
+            Var<Type4Byte> other = warp_active_bit_xor(result);
+            result               = op(result, other);
         };
+        return result;
     }
 
-    ReduceOpCallable Sum(const Var<Type4Byte>& d_in)
+    Var<Type4Byte> Sum(const Var<Type4Byte>& lane_value)
     {
-        return [&] { luisa::compute::warp_active_sum(d_in); };
+        return luisa::compute::warp_active_sum(lane_value);
     }
 
-    ReduceOpCallable Min(const Var<Type4Byte>& d_in)
+    Var<Type4Byte> Min(const Var<Type4Byte>& lane_value)
     {
-        return [&] { luisa::compute::warp_active_min(d_in); };
+        return luisa::compute::warp_active_min(lane_value);
     }
 
-    ReduceOpCallable Max(const Var<Type4Byte>& d_in)
+    Var<Type4Byte> Max(const Var<Type4Byte>& lane_value)
     {
-        return [&] { luisa::compute::warp_active_max(d_in); };
+        return luisa::compute::warp_active_max(lane_value);
     }
 };
 }  // namespace luisa::parallel_primitive
