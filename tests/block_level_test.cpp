@@ -26,8 +26,7 @@ int main(int argc, char* argv[])
     CommandList cmdlist;
     Stream      stream = device.create_stream();
 
-    DeviceReduce reducer;
-    reducer.create(device);
+
     constexpr int      BLOCKSIZE  = 256;
     constexpr int      N          = 512;
     auto               in_buffer  = device.create_buffer<int32>(N);

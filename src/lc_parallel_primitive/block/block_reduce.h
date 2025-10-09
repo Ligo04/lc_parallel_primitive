@@ -7,13 +7,12 @@
 
 #pragma once
 
-#include "luisa/dsl/builtin.h"
-#include "luisa/dsl/sugar.h"
-#include <lc_parallel_primitive/common/type_trait.h>
+#include <luisa/dsl/builtin.h>
+#include <luisa/dsl/sugar.h>
 #include <luisa/dsl/func.h>
+#include <lc_parallel_primitive/common/type_trait.h>
 #include <lc_parallel_primitive/runtime/core.h>
 #include <cstddef>
-
 
 namespace luisa::parallel_primitive
 {
@@ -67,7 +66,7 @@ class BlockReduce : public LuisaModule
         }
         $else
         {
-            //TODO implement block-level reduce using warp shuffle
+            //TODO: implement block-level reduce using warp shuffle
             using namespace luisa::compute;
             luisa::compute::set_block_size(BlockSize);
             Int thid    = Int(thread_id().x);

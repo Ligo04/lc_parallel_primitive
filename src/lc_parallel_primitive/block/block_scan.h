@@ -5,11 +5,10 @@
  * @Last Modified time: 2025-09-29 11:44:03
  */
 #pragma once
-
-#include <lc_parallel_primitive/common/type_trait.h>
 #include <luisa/dsl/func.h>
-#include <lc_parallel_primitive/runtime/core.h>
 #include <luisa/dsl/builtin.h>
+#include <lc_parallel_primitive/common/type_trait.h>
+#include <lc_parallel_primitive/runtime/core.h>
 
 
 namespace luisa::parallel_primitive

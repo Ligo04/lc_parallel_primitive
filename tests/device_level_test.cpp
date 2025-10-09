@@ -8,8 +8,10 @@
 #include "luisa/core/logging.h"
 #include "luisa/vstl/config.h"
 #include <algorithm>
+#include <cstdint>
 #include <lc_parallel_primitive/parallel_primitive.h>
 #include <random>
+#include <typeindex>
 #include <vector>
 #include <boost/ut.hpp>
 using namespace luisa;
@@ -32,12 +34,14 @@ int main(int argc, char* argv[])
     DeviceReduce reducer;
     reducer.create(device);
 
-    auto               in_buffer  = device.create_buffer<int32>(1024);
+    constexpr int32_t array_size = 10240;
+
+    auto               in_buffer  = device.create_buffer<int32>(array_size);
     auto               out_buffer = device.create_buffer<int32>(1);
     std::vector<int32> result(1);
 
-    std::vector<int32> input_data(1024);
-    for(int i = 0; i < 1024; i++)
+    std::vector<int32> input_data(array_size);
+    for(int i = 0; i < array_size; i++)
     {
         input_data[i] = i;
     }
@@ -51,15 +55,17 @@ int main(int argc, char* argv[])
     reducer.Sum(cmdlist, stream, in_buffer.view(), out_buffer.view(), in_buffer.size());
 
     stream << out_buffer.copy_to(result.data()) << synchronize();  // 输出结果
-    LUISA_INFO("Result (0+1+2+...+1023): {}", (1023 * 1024) / 2);
+    LUISA_INFO("Result (0+1+2+...+{}): {}", (array_size - 1), ((array_size - 1) * array_size) / 2);
     LUISA_INFO("Reduce: {}", result[0]);
 
-    "reduce"_test = [&] { expect((1023 * 1024) / 2 == result[0]); };
+    "reduce"_test = [&]
+    { expect(((array_size - 1) * array_size) / 2 == result[0]); };
 
     //reduce(min)
     reducer.Min(cmdlist, stream, in_buffer.view(), out_buffer.view(), in_buffer.size());
     stream << out_buffer.copy_to(result.data()) << synchronize();  // 输出结果
-    LUISA_INFO("Result Min(0-1023): {}",
+    LUISA_INFO("Result Min(0-{}): {}",
+               (array_size - 1),
                *std::min_element(input_data.begin(), input_data.end()));
     LUISA_INFO("Reduce Min: {}", result[0]);
     "reduce min"_test = [&]
@@ -78,8 +84,7 @@ int main(int argc, char* argv[])
         expect(*std::max_element(input_data.begin(), input_data.end()) == result[0]);
     };
 
-
-    auto             index_out_buffer = device.create_buffer<int32>(1);
+    auto             index_out_buffer = device.create_buffer<int>(1);
     std::vector<int> index_result(1);
     reducer.ArgMin(cmdlist,
                    stream,
