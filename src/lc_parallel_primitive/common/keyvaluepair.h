@@ -23,6 +23,37 @@ struct KeyValuePair
 
 LUISA_TEMPLATE_STRUCT(LUISA_KEY_VALUE_PAIR_TEMPLATE, LUISA_KEY_VALUE_PAIR, key, value){};
 
+
+template <typename T>
+struct is_key_value_pair : std::false_type
+{
+};
+
+template <typename K, typename V>
+struct is_key_value_pair<KeyValuePair<K, V>> : std::true_type
+{
+};
+
+template <typename T>
+concept KeyValuePairType = is_key_value_pair<T>::value;
+
+// 值类型提取
+template <typename T>
+struct value_type_of
+{
+    // 对于非 KeyValuePair 类型，可能没有值类型
+};
+
+template <typename K, typename V>
+struct value_type_of<KeyValuePair<K, V>>
+{
+    using type = V;
+};
+
+template <typename T>
+using value_type_of_t = typename value_type_of<T>::type;
+
+
 template <typename KeyType, typename ValueType>
 luisa::string get_key_value_shader_desc()
 {

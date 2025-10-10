@@ -5,13 +5,13 @@
 //  * @Last Modified time: 2025-09-22 18:11:54
 //  */
 
-#include "luisa/core/logging.h"
-#include "luisa/vstl/config.h"
+#include <luisa/core/basic_traits.h>
+#include <luisa/core/logging.h>
+#include <luisa/vstl/config.h>
 #include <algorithm>
 #include <cstdint>
 #include <lc_parallel_primitive/parallel_primitive.h>
 #include <random>
-#include <typeindex>
 #include <vector>
 #include <boost/ut.hpp>
 using namespace luisa;
@@ -84,8 +84,8 @@ int main(int argc, char* argv[])
         expect(*std::max_element(input_data.begin(), input_data.end()) == result[0]);
     };
 
-    auto             index_out_buffer = device.create_buffer<int>(1);
-    std::vector<int> index_result(1);
+    auto index_out_buffer = device.create_buffer<luisa::uint>(1);
+    std::vector<luisa::uint> index_result(1);
     reducer.ArgMin(cmdlist,
                    stream,
                    in_buffer.view(),
