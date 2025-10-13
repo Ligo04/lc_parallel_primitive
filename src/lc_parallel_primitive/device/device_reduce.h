@@ -6,6 +6,9 @@
  */
 
 #pragma once
+#include <lc_parallel_primitive/block/block_scan.h>
+#include "luisa/dsl/local.h"
+#include <limits>
 #include <luisa/core/basic_traits.h>
 #include <luisa/ast/type.h>
 #include <luisa/runtime/stream.h>
@@ -29,6 +32,7 @@ template <typename T>
 concept NumericTOrKeyValuePairT = NumericT<T> || KeyValuePairType<T>;
 
 using namespace luisa::compute;
+template <size_t ITEMS_PER_THREAD = 1>
 class DeviceReduce : public LuisaModule
 {
   private:
@@ -46,24 +50,16 @@ class DeviceReduce : public LuisaModule
     using ArgAssignShaderT =
         Shader<1, Buffer<IndexValuePairT<Type4Byte>>, Buffer<Type4Byte>, Buffer<uint>>;
 
-    // for reduce by key
     template <NumericT KeyType, NumericT ValueType>
-    using KVPT = KeyValuePair<KeyType, ValueType>;
-
-    template <NumericT KeyType, NumericT ValueType>
-    using ConstructKVPShaderT =
-        Shader<1, Buffer<KeyType>, Buffer<ValueType>, Buffer<KVPT<KeyType, ValueType>>>;
-
-    template <NumericT KeyType, NumericT ValueType>
-    using AssignKVPShaderT =
-        Shader<1, Buffer<KVPT<KeyType, ValueType>>, Buffer<KeyType>, Buffer<ValueType>>;
+    using ReduceByKeyShaderT =
+        Shader<1, Buffer<KeyType>, Buffer<ValueType>, Buffer<KeyType>, Buffer<ValueType>, Buffer<uint>, uint>;
 
   public:
-    int m_block_size = 256;
-    int m_warp_nums  = 32;
+    uint m_block_size = 256;
+    uint m_warp_nums  = 32;
 
   private:
-    int    m_shared_mem_size = 0;
+    uint   m_shared_mem_size = 0;
     Device m_device;
     bool   m_created = false;
 
@@ -240,10 +236,8 @@ class DeviceReduce : public LuisaModule
         auto ms_arg_construct_ptr = reinterpret_cast<ArgConstructShaderT<Type4Byte>*>(
             &(*ms_arg_construct_it->second));
         cmdlist << (*ms_arg_construct_ptr)(d_in, d_in_kv.view()).dispatch(d_in.size());
-
         Buffer<IndexValuePairT<Type4Byte>> d_out_kv =
             m_device.create_buffer<IndexValuePairT<Type4Byte>>(1);
-
 
         Reduce(
             cmdlist,
@@ -282,9 +276,13 @@ class DeviceReduce : public LuisaModule
                      BufferView<ValueType> d_values_in,
                      BufferView<KeyType>   d_unique_out,
                      BufferView<ValueType> d_aggregates_out,
-                     BufferView<int>       d_num_runs_out,
-                     ReduceOp              reduce_op = 0)
+                     BufferView<uint>      d_num_runs_out,
+                     ReduceOp              reduce_op,
+                     size_t                num_element)
     {
+        reduce_by_key_array(
+            cmdlist, d_keys_in, d_values_in, d_unique_out, d_aggregates_out, d_num_runs_out, reduce_op, num_element);
+        stream << cmdlist.commit() << synchronize();
     }
 
 
@@ -306,8 +304,9 @@ class DeviceReduce : public LuisaModule
     template <NumericT Type4Byte>
     void compile_common(Device& device)
     {
-        const auto n_blocks        = m_block_size;
-        size_t     shared_mem_size = m_shared_mem_size;
+        const auto   n_blocks        = m_block_size;
+        const size_t shared_mem_size = m_shared_mem_size;
+
         // for construct key value pair
         luisa::unique_ptr<ArgConstructShaderT<Type4Byte>> ms_arg_construct_shader = nullptr;
         lazy_compile(device,
@@ -349,18 +348,18 @@ class DeviceReduce : public LuisaModule
             std::move(ms_arg_assign_shader));
     }
 
-    template <NumericTOrKeyValuePairT Type, typename ReduceOp>
+    template <NumericTOrKeyValuePairT DataType, typename ReduceOp>
     void compile_reduce_op(Device& device, ReduceOp reduce_op)
     {
-        const auto n_blocks        = m_block_size;
-        size_t     shared_mem_size = m_shared_mem_size;
+        const auto   n_blocks        = m_block_size;
+        const size_t shared_mem_size = m_shared_mem_size;
 
         // for reduce
-        auto load_shared_chunk_from_mem = [&](SmemTypePtr<Type>& s_data,
-                                              BufferVar<Type>&   g_idata,
-                                              Int                n,
-                                              Int                baseIndex,
-                                              Var<Type>          initial)
+        auto load_shared_chunk_from_mem = [&](SmemTypePtr<DataType>& s_data,
+                                              BufferVar<DataType>&   g_idata,
+                                              Int                    n,
+                                              Int                    baseIndex,
+                                              Var<DataType>          initial)
         {
             Int thread_id_x = Int(thread_id().x);
             Int block_id_x  = Int(block_id().x);
@@ -376,8 +375,8 @@ class DeviceReduce : public LuisaModule
             Int bank_offset_a = conflict_free_offset(ai);
             Int bank_offset_b = conflict_free_offset(bi);
 
-            Var<Type> data_ai = initial;
-            Var<Type> data_bi = initial;
+            Var<DataType> data_ai = initial;
+            Var<DataType> data_bi = initial;
 
             $if(ai < n)
             {
@@ -392,7 +391,7 @@ class DeviceReduce : public LuisaModule
         };
 
         auto reduce_block =
-            [&](SmemTypePtr<Type>& s_data, BufferVar<Type>& block_sums, Int block_index)
+            [&](SmemTypePtr<DataType>& s_data, BufferVar<DataType>& block_sums, Int block_index)
         {
             $if(block_index == 0)
             {
@@ -428,21 +427,21 @@ class DeviceReduce : public LuisaModule
             };
         };
         //  reduce
-        luisa::unique_ptr<ReduceShaderT<Type>> ms_reduce_shader = nullptr;
+        luisa::unique_ptr<ReduceShaderT<DataType>> ms_reduce_shader = nullptr;
         lazy_compile(device,
                      ms_reduce_shader,
-                     [&](BufferVar<Type> g_idata,
-                         BufferVar<Type> g_block_sums,
-                         Int             n,
-                         Int             block_index,
-                         Int             base_index,
-                         Var<Type>       init) noexcept
+                     [&](BufferVar<DataType> g_idata,
+                         BufferVar<DataType> g_block_sums,
+                         Int                 n,
+                         Int                 block_index,
+                         Int                 base_index,
+                         Var<DataType>       init) noexcept
                      {
                          set_block_size(n_blocks);
-                         Int ai, bi, men_ai, men_bi, bank_offset_a, bank_offset_b;
                          Int block_id_x  = Int(block_id().x);
                          Int block_dim_x = Int(block_size_x());
-                         SmemTypePtr<Type> s_data = new SmemType<Type>{shared_mem_size};
+                         SmemTypePtr<DataType> s_data =
+                             new SmemType<DataType>{shared_mem_size};
 
                          $if(base_index == 0)
                          {
@@ -452,57 +451,8 @@ class DeviceReduce : public LuisaModule
                          reduce_block(s_data, g_block_sums, block_index);
                      });
 
-        ms_reduce_map.try_emplace(get_reduce_type_op_desc<Type>(reduce_op),
+        ms_reduce_map.try_emplace(get_reduce_type_op_desc<DataType>(reduce_op),
                                   std::move(ms_reduce_shader));
-    }
-
-    template <NumericT KeyType, NumericT ValueType>
-    void compile_reduce_by_key(Device& device)
-    {
-        using KVP = KeyValuePair<KeyType, ValueType>;
-        // to be implemented
-        const auto n_blocks        = m_block_size;
-        size_t     shared_mem_size = m_shared_mem_size;
-
-        // for construct/assign key value pair
-        luisa::unique_ptr<ConstructKVPShaderT<KeyType, ValueType>> ms_kvp_construct_shader =
-            nullptr;
-        lazy_compile(device,
-                     ms_kvp_construct_shader,
-                     [&](BufferVar<KeyType>   arr_key_in,
-                         BufferVar<ValueType> arr_value_in,
-                         BufferVar<KVP>       g_kv_out) noexcept
-                     {
-                         set_block_size(n_blocks);
-                         Int global_id =
-                             Int(block_id().x * block_size().x + thread_id().x);
-                         Var<KVP> initial{arr_key_in.read(global_id),
-                                          arr_value_in.read(global_id)};
-                         g_kv_out.write(global_id, initial);
-                     });
-        ms_kvp_construct_shader.try_emplace(
-            {luisa::string{luisa::compute::Type::of<KeyType>()->description()},
-             luisa::string{luisa::compute::Type::of<ValueType>()->description()}},
-            std::move(ms_kvp_construct_shader));
-
-        luisa::unique_ptr<ConstructKVPShaderT<KeyType, ValueType>> ms_kvp_assign_shader = nullptr;
-        lazy_compile(device,
-                     ms_kvp_assign_shader,
-                     [&](BufferVar<KVP>       g_kv_in,
-                         BufferVar<KeyType>   arr_key_out,
-                         BufferVar<ValueType> arr_value_in) noexcept
-                     {
-                         set_block_size(n_blocks);
-                         Int global_id =
-                             Int(block_id().x * block_size().x + thread_id().x);
-                         Var<KVP> key_value_pair = g_kv_in.read(global_id);
-                         arr_key_out.write(global_id, key_value_pair.key);
-                         arr_value_in.write(global_id, key_value_pair.value);
-                     });
-        ms_kvp_assign_map.try_emplace(
-            {luisa::string{luisa::compute::Type::of<KeyType>()->description()},
-             luisa::string{luisa::compute::Type::of<ValueType>()->description()}},
-            std::move(ms_kvp_assign_shader));
     }
 
     template <NumericTOrKeyValuePairT Type, typename ReduceOp>
@@ -563,7 +513,6 @@ class DeviceReduce : public LuisaModule
 
         if(num_blocks > 1)
         {
-            // recursive
             cmdlist << (*ms_reduce_ptr)(arr_in, temp_buffer_level, num_elements, 0, 0, init)
                            .dispatch(block_size * (num_blocks - np2_last_block));
 
@@ -578,7 +527,7 @@ class DeviceReduce : public LuisaModule
                                             init)
                                .dispatch(block_size);
             }
-
+            // recursive
             reduce_array_recursive<Type>(cmdlist,
                                          temp_buffer_level,
                                          temp_buffer_level,
@@ -598,13 +547,274 @@ class DeviceReduce : public LuisaModule
         }
     };
 
+    template <NumericT KeyType, NumericT ValueType, typename ReduceOp>
+    void compile_reduce_by_key_op(Device& device, ReduceOp reduce_op)
+    {
+        const auto blocks_size = m_block_size;
 
-    template <NumericT KeyType, NumericT ValueType>
-    void reduce_by_key_array_recursive(luisa::compute::CommandList& cmdlist,
-                                       int num_elements,
-                                       int offset,
-                                       int level,
-                                       int op)
+        auto mask_segment_head_and_load_op = [&](SmemTypePtr<KeyType>& s_keys,
+                                                 SmemTypePtr<ValueType>& s_values,
+                                                 SmemTypePtr<int>&   s_flags,
+                                                 BufferVar<KeyType>& keys_in,
+                                                 BufferVar<ValueType>& values_in,
+                                                 UInt valid_item)
+        {
+            Int  thid        = Int(dispatch_id().x);
+            UInt block_start = Int(block_id().x * block_size_x());
+            UInt load_offset = block_start + thid * UInt(ITEMS_PER_THREAD);
+
+            Local<KeyType>   local_keys{ITEMS_PER_THREAD};
+            Local<ValueType> local_values{ITEMS_PER_THREAD};
+            Local<int>       local_flags{ITEMS_PER_THREAD};
+
+            $for(i, 0u, UInt(ITEMS_PER_THREAD))
+            {
+                UInt global_idx = load_offset + i;
+                $if(global_idx < valid_item)
+                {
+                    local_keys[i]   = keys_in.read(global_idx);
+                    local_values[i] = values_in.read(global_idx);
+                    $if(global_idx == 0)
+                    {
+                        local_flags[i] = 1;
+                    }
+                    $else
+                    {
+                        local_flags[i] = luisa::compute::select(
+                            1, 0, local_keys[i] == keys_in.read(global_idx - 1));
+                    };
+                }
+                $else
+                {
+                    local_keys[i]   = KeyType(0);
+                    local_values[i] = ValueType(0);
+                    local_flags[i]  = 0;
+                };
+
+                UInt shared_idx         = thid * UInt(ITEMS_PER_THREAD) + i;
+                (*s_keys)[shared_idx]   = local_keys[i];
+                (*s_values)[shared_idx] = local_values[i];
+                (*s_flags)[shared_idx]  = local_flags[i];
+            };
+            sync_block();
+        };
+
+        auto segment_reduce_op = [&](SmemTypePtr<int>&       s_flags,
+                                     SmemTypePtr<ValueType>& s_reduced_values,
+                                     SmemTypePtr<int>&       s_segment_ids,
+                                     UInt valid_item) noexcept
+        {
+            Int  thid        = Int(dispatch_id().x);
+            UInt block_start = Int(block_id().x * block_size_x());
+            $for(i, 0u, UInt(ITEMS_PER_THREAD))
+            {
+                UInt shared_idx = thid * Int(ITEMS_PER_THREAD) + i;
+                UInt global_idx = block_start + shared_idx;
+
+                $if(global_idx < valid_item)
+                {
+                    Var<int> s_prefix_sum;
+                    BlockScan<int>().ExclusiveSum(s_flags->read(shared_idx), s_prefix_sum);
+                    (*s_segment_ids)[shared_idx] = s_prefix_sum;
+                };
+            };
+            sync_block();
+
+
+            $for(i, 0u, UInt(ITEMS_PER_THREAD))
+            {
+                UInt shared_idx = thid * Int(ITEMS_PER_THREAD) + i;
+                UInt global_idx = block_start + shared_idx;
+
+                $if(global_idx < valid_item)
+                {
+                    Int segment_id = (*s_segment_ids)[shared_idx];
+                    // find the start of the segment
+                    UInt segment_start = shared_idx;
+                    UInt j             = UInt(shared_idx);
+                    $while(j > 0u)
+                    {
+                        $if((*s_segment_ids)[j] == segment_id)
+                        {
+                            segment_start = j;
+                        }
+                        $else
+                        {
+                            $break;
+                        };
+                        j = j - 1u;
+                    };
+
+                    // find the end of the segment
+                    Int segment_end = shared_idx + 1u;
+                    j               = UInt(shared_idx + 1u);
+
+                    $while(j < block_size_x() * UInt(ITEMS_PER_THREAD))
+                    {
+                        $if(j < valid_item & (*s_segment_ids)[j] == segment_id)
+                        {
+                            segment_end = j + 1u;
+                        }
+                        $else
+                        {
+                            $break;
+                        };
+                        j = j + 1u;
+                    };
+
+                    Int segment_length = segment_end - segment_start;
+                    Int segment_index  = shared_idx - segment_start;
+                    Int stride         = 1;
+                    // device_log("shared_idx {}, s_segment_ids {}, segment_start {}, segment_end {}, segment_length {}",
+                    //            shared_idx,
+                    //            (*s_segment_ids)[shared_idx],
+                    //            segment_start,
+                    //            segment_end,
+                    //            segment_length);
+                    $while(stride < segment_length)
+                    {
+                        $if(segment_index % (2u * stride) == 0u)
+                        {
+                            Int other_idx = shared_idx + stride;
+                            $if(other_idx < segment_end)
+                            {
+                                (*s_reduced_values)[shared_idx] =
+                                    reduce_op((*s_reduced_values)[shared_idx],
+                                              (*s_reduced_values)[other_idx]);
+                            };
+                        };
+                        // sync_block();
+                        stride *= 2;
+                    };
+                };
+            };
+            sync_block();
+        };
+
+        auto output_result = [&](SmemTypePtr<KeyType>&   s_keys,
+                                 SmemTypePtr<ValueType>& s_values,
+                                 SmemTypePtr<int>&       s_flags,
+                                 SmemTypePtr<uint>&      s_head_count,
+                                 SmemTypePtr<uint>&      s_block_offset,
+                                 SmemTypePtr<uint>&      s_total_heads,
+                                 BufferVar<KeyType>&     unique_out,
+                                 BufferVar<ValueType>&   aggregated_out,
+                                 BufferVar<uint>&        num_runs_out,
+                                 UInt                    valid_item) noexcept
+        {
+            Int  thid        = Int(dispatch_id().x);
+            UInt block_start = Int(block_id().x * block_size_x());
+            $if(thid == 0)
+            {
+                (*s_head_count)[0] = 0;
+            };
+            sync_block();
+
+            UInt        local_head_count = 0;
+            Local<uint> local_head_position{ITEMS_PER_THREAD};
+
+            $for(i, 0u, UInt(ITEMS_PER_THREAD))
+            {
+                UInt shared_idx = thid * UInt(ITEMS_PER_THREAD) + i;
+                UInt global_idx = block_start + shared_idx;
+
+                $if(global_idx < valid_item & (*s_flags)[shared_idx] == 1)
+                {
+                    local_head_position[local_head_count] = shared_idx;
+                    local_head_count += 1;
+                };
+            };
+
+            UInt thread_output_base = 0u;
+            $if(local_head_count > 0u)
+            {
+                thread_output_base = (*s_head_count).atomic(0u).fetch_add(local_head_count);
+            };
+            sync_block();
+
+            UInt block_output_base = 0u;
+            $if(thid == 0u)
+            {
+                UInt block_head_count = (*s_head_count)[0];
+                $if(block_head_count > 0u)
+                {
+                    block_output_base = num_runs_out.atomic(0u).fetch_add(block_head_count);
+                };
+                (*s_block_offset)[0] = block_output_base;
+            };
+            sync_block();
+
+            // $for(i, 0u, (*s_head_count)[0])
+            // {
+            //     UInt local_pos = local_head_position[i];
+            //     UInt ouput_idx = block_output_base + thread_output_base + i;
+
+            //     // unique_out.write(ouput_idx, (*s_keys)[local_pos]);
+            //     // aggregated_out.write(ouput_idx, (*s_values)[local_pos]);
+            // };
+        };
+
+
+        luisa::unique_ptr<ReduceByKeyShaderT<KeyType, ValueType>> ms_reduce_by_key_shader =
+            nullptr;
+
+        lazy_compile(
+            device,
+            ms_reduce_by_key_shader,
+            [&](BufferVar<KeyType>   keys_in,
+                BufferVar<ValueType> values_in,
+                BufferVar<KeyType>   unique_out,
+                BufferVar<ValueType> aggregated_out,
+                BufferVar<uint>      num_runs_out,
+                UInt                 num_item) noexcept
+            {
+                set_block_size(m_block_size);
+                Int block_id_x  = Int(block_id().x);
+                Int block_dim_x = Int(block_size_x());
+                Int thread_id   = Int(thread_x());
+                Int tid         = Int(dispatch_id().x);
+
+                const size_t shared_mem_size = m_shared_mem_size * ITEMS_PER_THREAD;
+
+                SmemTypePtr<KeyType> s_keys = new SmemType<KeyType>{shared_mem_size};
+                SmemTypePtr<ValueType> s_values = new SmemType<ValueType>{shared_mem_size};
+                SmemTypePtr<int> s_flags = new SmemType<int>{shared_mem_size};
+
+                SmemTypePtr<int> s_segment_ids = new SmemType<int>{shared_mem_size};
+                SmemTypePtr<uint> s_head_count   = new SmemType<uint>{1};
+                SmemTypePtr<uint> s_block_offset = new SmemType<uint>{1};
+                SmemTypePtr<uint> s_total_heads  = new SmemType<uint>{1};
+
+                // boundary condition
+                mask_segment_head_and_load_op(s_keys, s_values, s_flags, keys_in, values_in, num_item);
+                // segment reduce
+                segment_reduce_op(s_flags, s_values, s_segment_ids, num_item);
+                // output result
+                output_result(s_keys,
+                              s_values,
+                              s_flags,
+                              s_head_count,
+                              s_block_offset,
+                              s_total_heads,
+                              unique_out,
+                              aggregated_out,
+                              num_runs_out,
+                              num_item);
+            });
+
+        ms_reduce_by_key_map.try_emplace(get_key_value_op_shader_desc<KeyType, ValueType>(reduce_op),
+                                         std::move(ms_reduce_by_key_shader));
+    }
+
+    template <NumericT KeyType, NumericT ValueType, typename ReduceOp>
+    void reduce_by_key_array(CommandList&          cmdlist,
+                             BufferView<KeyType>   keys_in,
+                             BufferView<ValueType> values_in,
+                             BufferView<KeyType>   unique_out,
+                             BufferView<ValueType> aggregated_out,
+                             BufferView<uint>      num_runs_out,
+                             ReduceOp              reduce_op,
+                             int                   num_elements) noexcept
     {
         int block_size = m_block_size;
         int num_blocks = imax(1, (int)ceil((float)num_elements / (2.0f * block_size)));
@@ -638,6 +848,23 @@ class DeviceReduce : public LuisaModule
                 num_threads_last_block = floor_pow_2(num_elements_last_block);
             }
         }
+
+        // execute the scan
+        auto key = get_key_value_op_shader_desc<KeyType, ValueType>(reduce_op);
+        auto ms_reduce_by_key_it = ms_reduce_by_key_map.find(key);
+        if(ms_reduce_by_key_it == ms_reduce_by_key_map.end())
+        {
+            compile_reduce_by_key_op<KeyType, ValueType>(m_device, reduce_op);
+            ms_reduce_by_key_it = ms_reduce_by_key_map.find(key);
+        }
+        auto ms_reduce_by_key_ptr =
+            reinterpret_cast<ReduceByKeyShaderT<KeyType, ValueType>*>(
+                &(*ms_reduce_by_key_it->second));
+
+        // non-recursive
+        cmdlist << (*ms_reduce_by_key_ptr)(
+                       keys_in, values_in, unique_out, aggregated_out, num_runs_out, num_elements)
+                       .dispatch(block_size);
     };
 
 
@@ -668,8 +895,6 @@ class DeviceReduce : public LuisaModule
     luisa::unordered_map<luisa::string, luisa::shared_ptr<luisa::compute::Resource>> ms_arg_construct_map;
     luisa::unordered_map<luisa::string, luisa::shared_ptr<luisa::compute::Resource>> ms_arg_assign_map;
     // for reduce by key
-    luisa::unordered_map<luisa::string, luisa::shared_ptr<luisa::compute::Resource>> ms_kvp_construct_map;
-    luisa::unordered_map<luisa::string, luisa::shared_ptr<luisa::compute::Resource>> ms_kvp_assign_map;
     luisa::unordered_map<luisa::string, luisa::shared_ptr<luisa::compute::Resource>> ms_reduce_by_key_map;
 };
 }  // namespace luisa::parallel_primitive

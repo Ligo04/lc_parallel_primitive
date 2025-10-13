@@ -9,6 +9,7 @@
 #pragma once
 #include <lc_parallel_primitive/common/type_trait.h>
 #include <luisa/dsl/struct.h>
+#include <typeindex>
 
 template <NumericT KeyType, NumericT ValueType>
 struct KeyValuePair
@@ -61,4 +62,14 @@ luisa::string get_key_value_shader_desc()
     luisa::string_view value_desc = luisa::compute::Type::of<ValueType>()->description();
 
     return luisa::string(key_desc) + "+" + luisa::string(value_desc);
+}
+
+template <typename KeyType, typename ValueType, typename ReduceOp>
+luisa::string get_key_value_op_shader_desc(ReduceOp op)
+{
+    luisa::string_view key_desc = luisa::compute::Type::of<KeyType>()->description();
+    luisa::string_view value_desc = luisa::compute::Type::of<ValueType>()->description();
+
+    return luisa::string(key_desc) + "+" + luisa::string(value_desc) + "+"
+           + std::type_index(typeid(op)).name();
 }

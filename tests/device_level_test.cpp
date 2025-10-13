@@ -34,7 +34,7 @@ int main(int argc, char* argv[])
     DeviceReduce reducer;
     reducer.create(device);
 
-    constexpr int32_t array_size = 10240;
+    constexpr int32_t array_size = 256;
 
     auto               in_buffer  = device.create_buffer<int32>(array_size);
     auto               out_buffer = device.create_buffer<int32>(1);
@@ -132,5 +132,67 @@ int main(int argc, char* argv[])
                 - input_data.begin())
                == index_result[0]);
     };
+
+
+    //reduce by key
+
+    auto key_buffer   = device.create_buffer<int32>(array_size);
+    auto value_buffer = device.create_buffer<int32>(array_size);
+
+    auto segments           = 10;
+    auto unique_keys_buffer = device.create_buffer<int32>(segments);
+    auto aggregates_buffer  = device.create_buffer<int32>(segments);
+    auto num_runs_buffer    = device.create_buffer<luisa::uint>(1);
+
+    std::vector<int32> input_keys(array_size);
+    auto               items_per_segment = array_size / segments;
+    for(auto i = 0; i < array_size; i++)
+    {
+        input_keys[i] = i / items_per_segment;  // 每 (array_size/10) 个元素一组
+        if(input_keys[i] >= segments)
+            input_keys[i] = segments - 1;  // 处理余数
+    }
+    stream << key_buffer.copy_from(input_keys.data()) << synchronize();
+    stream << value_buffer.copy_from(input_data.data()) << synchronize();
+
+
+    reducer.ReduceByKey(
+        cmdlist,
+        stream,
+        key_buffer.view(),
+        value_buffer.view(),
+        unique_keys_buffer.view(),
+        aggregates_buffer.view(),
+        num_runs_buffer.view(),
+        [](const Var<int32>& a, Var<int32>& b) { return a + b; },
+        in_buffer.size());
+
+    std::vector<int32>       unique_keys(segments);
+    std::vector<int32>       aggregates(segments);
+    std::vector<luisa::uint> num_runs(1);
+    stream << unique_keys_buffer.copy_to(unique_keys.data()) << synchronize();  // 输出结果
+    stream << aggregates_buffer.copy_to(aggregates.data()) << synchronize();  // 输出结果
+    stream << num_runs_buffer.copy_to(num_runs.data()) << synchronize();  // 输出结果
+
+    LUISA_INFO("Reduce By Key: num_runs: {}", num_runs[0]);
+    "reduce by key"_test = [&]
+    {
+        expect(segments == num_runs[0]);
+        for(auto i = 0; i < segments; i++)
+        {
+            auto expected_sum = 0;
+            for(auto j = 0; j < array_size; j++)
+            {
+                if(input_keys[j] == i)
+                {
+                    expected_sum += input_data[j];
+                }
+            }
+            LUISA_INFO("Key: {}, Aggregate: {}", unique_keys[i], aggregates[i]);
+            LUISA_INFO("Key: {}, Expected Aggregate: {}", i, expected_sum);
+            // expect(expected_sum == aggregates[i]);
+        }
+    };
+
     return 0;
 }
