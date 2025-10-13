@@ -31,7 +31,7 @@ int main(int argc, char* argv[])
 
 
     constexpr size_t BLOCKSIZE        = 256;
-    constexpr size_t array_size       = 512;
+    constexpr size_t array_size       = 10240;
     constexpr size_t ITEMS_PER_THREAD = 4;
 
     constexpr size_t ITEM_BLOCK_SIZE = 128;
@@ -94,7 +94,7 @@ int main(int argc, char* argv[])
                  block_reduce_items_shader,
                  [&](BufferVar<int> arr_in, BufferVar<int> arr_out, Int n) noexcept
                  {
-                     luisa::compute::set_block_size(BLOCKSIZE);
+                     luisa::compute::set_block_size(ITEM_BLOCK_SIZE);
                      UInt tid = UInt(thread_id().x);
                      UInt block_start =
                          block_id().x * block_size_x() * UInt(ITEMS_PER_THREAD);
@@ -109,7 +109,7 @@ int main(int argc, char* argv[])
                          BlockReduce<int, ITEM_BLOCK_SIZE, ITEMS_PER_THREAD>().Sum(thread_data);
                      $if(thread_id().x == 0)
                      {
-                         arr_out.write(block_start, aggregate);
+                         arr_out.write(block_id().x, aggregate);
                      };
                  });
 
@@ -157,7 +157,6 @@ int main(int argc, char* argv[])
                          arr_out.write(thid, scanned_data);
                      };
                  });
-
 
     stream << (*block_scan_shader)(in_buffer.view(), scan_out_buffer.view(), array_size)
                   .dispatch(array_size);
