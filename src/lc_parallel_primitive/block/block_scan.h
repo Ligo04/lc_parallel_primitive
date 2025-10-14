@@ -5,8 +5,7 @@
  * @Last Modified time: 2025-09-29 11:44:03
  */
 #pragma once
-#include "luisa/ast/type.h"
-#include "luisa/dsl/var.h"
+#include <luisa/dsl/var.h>
 #include <luisa/dsl/func.h>
 #include <luisa/dsl/builtin.h>
 #include <lc_parallel_primitive/common/type_trait.h>

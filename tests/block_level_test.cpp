@@ -4,7 +4,6 @@
 #include "lc_parallel_primitive/runtime/core.h"
 #include "luisa/core/logging.h"
 #include "luisa/dsl/builtin.h"
-#include "luisa/dsl/stmt.h"
 #include "luisa/dsl/var.h"
 #include "luisa/runtime/shader.h"
 #include <cstddef>

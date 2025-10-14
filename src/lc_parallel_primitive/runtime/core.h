@@ -65,7 +65,10 @@ static inline int floor_pow_2(int n)
 #endif
 }
 
-static void get_temp_size_scan(size_t& temp_storage_size, size_t m_block_size, size_t num_items)
+static void get_temp_size_scan(size_t& temp_storage_size,
+                               size_t  m_block_size,
+                               size_t  items_per_thread,
+                               size_t  num_items)
 {
     auto         block_size       = m_block_size;
     unsigned int max_num_elements = num_items;
@@ -76,7 +79,7 @@ static void get_temp_size_scan(size_t& temp_storage_size, size_t m_block_size, s
     {
         // output segment size
         unsigned int num_blocks =
-            imax(1, (int)ceil((float)num_elements / (2.f * block_size)));
+            imax(1, (int)ceil((float)num_elements / (items_per_thread * block_size)));
         if(num_blocks > 1)
         {
             level++;

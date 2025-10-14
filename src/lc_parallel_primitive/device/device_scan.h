@@ -25,10 +25,11 @@ namespace luisa::parallel_primitive
 {
 
 using namespace luisa::compute;
+template <size_t BLOCK_SIZE = 256, size_t ITEMS_PER_THREAD = 1>
 class DeviceScan : public LuisaModule
 {
   public:
-    int m_block_size = 256;
+    int m_block_size = BLOCK_SIZE;
     int m_warp_nums  = 32;
 
   private:
@@ -43,11 +44,9 @@ class DeviceScan : public LuisaModule
     void Create(Device& device)
     {
         m_device                   = device;
-        int num_elements_per_block = m_block_size * 2;
+        int num_elements_per_block = m_block_size * ITEMS_PER_THREAD;
         int extra_space            = num_elements_per_block / m_warp_nums;
         m_shared_mem_size          = (num_elements_per_block + extra_space);
-        // compile<int>(device);
-        // compile<float>(device);
     }
 
     template <NumericT Type4Byte>
