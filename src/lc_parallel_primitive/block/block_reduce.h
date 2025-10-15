@@ -2,7 +2,7 @@
  * @Author: Ligo 
  * @Date: 2025-09-28 16:54:51 
  * @Last Modified by: Ligo
- * @Last Modified time: 2025-09-29 14:22:16
+ * @Last Modified time: 2025-10-15 11:15:28
  */
 
 #pragma once
@@ -23,7 +23,7 @@ enum class DefaultBlockReduceAlgorithm
     WARP_SHUFFLE
 };
 
-template <NumericT Type4Byte, size_t BlockSize = 256, size_t ITEMS_PER_THREAD = 4, DefaultBlockReduceAlgorithm Algorithm = DefaultBlockReduceAlgorithm::SHARED_MEMORY>
+template <NumericT Type4Byte, size_t BlockSize = 256, size_t ITEMS_PER_THREAD = 2, DefaultBlockReduceAlgorithm Algorithm = DefaultBlockReduceAlgorithm::SHARED_MEMORY>
 class BlockReduce : public LuisaModule
 {
   public:

@@ -2,7 +2,7 @@
  * @Author: Ligo 
  * @Date: 2025-09-28 15:37:17 
  * @Last Modified by: Ligo
- * @Last Modified time: 2025-09-29 11:44:03
+ * @Last Modified time: 2025-10-15 11:50:25
  */
 #pragma once
 #include <luisa/dsl/var.h>
@@ -20,7 +20,7 @@ enum class DefaultBlockScanAlgorithm
     SHARED_MEMORY,
     WARP_SHUFFLE
 };
-template <NumericT Type4Byte, size_t BlockSize = 256, size_t ITEMS_PER_THREAD = 4, DefaultBlockScanAlgorithm Algorithm = DefaultBlockScanAlgorithm::SHARED_MEMORY>
+template <typename Type4Byte, size_t BlockSize = 256, size_t ITEMS_PER_THREAD = 2, DefaultBlockScanAlgorithm Algorithm = DefaultBlockScanAlgorithm::SHARED_MEMORY>
 class BlockScan : public LuisaModule
 {
 
@@ -35,8 +35,11 @@ class BlockScan : public LuisaModule
     ~BlockScan() = default;
 
   public:
-    template <typename ScanOp = luisa::compute::Callable<Var<Type4Byte>(const Var<Type4Byte>&, Var<Type4Byte>&)>>
-    void ExclusiveScan(const Var<Type4Byte>& thread_data, Var<Type4Byte>& output_block_sum, ScanOp op)
+    template <typename ScanOp = luisa::compute::Callable<Var<Type4Byte>(const Var<Type4Byte>&, const Var<Type4Byte>&)>>
+    void ExclusiveScan(const Var<Type4Byte>& thread_data,
+                       Var<Type4Byte>&       output_block_sum,
+                       ScanOp                op,
+                       Var<Type4Byte>        initial_value = Type4Byte(0))
     {
         using namespace luisa::compute;
         luisa::compute::set_block_size(BlockSize);
@@ -65,7 +68,7 @@ class BlockScan : public LuisaModule
             $if(thid == 0)
             {
                 // clear the last element for exclusive scan
-                (*m_shared_mem)[block_size_ - 1] = 0;
+                (*m_shared_mem)[block_size_ - 1] = initial_value;
             };
             sync_block();
             // down-sweep
@@ -89,16 +92,32 @@ class BlockScan : public LuisaModule
         $else{};
     }
 
-    template <typename ScanOp = luisa::compute::Callable<Var<Type4Byte>(const Var<Type4Byte>&, Var<Type4Byte>&)>>
+    template <typename ScanOp = luisa::compute::Callable<Var<Type4Byte>(const Var<Type4Byte>&, const Var<Type4Byte>&)>>
+    void ExclusiveScan(const Var<Type4Byte>& thread_data,
+                       Var<Type4Byte>&       output_block_sum,
+                       Var<Type4Byte>&       block_aggregate,
+                       ScanOp                op,
+                       Var<Type4Byte>        initial_value = Type4Byte(0))
+    {
+
+        ExclusiveScan(thread_data, output_block_sum, op, initial_value);
+        $if(compute::thread_id().x == compute::UInt(BlockSize - 1))
+        {
+            block_aggregate = op(thread_data, output_block_sum);
+        };
+    }
+
+    template <typename ScanOp = luisa::compute::Callable<Var<Type4Byte>(const Var<Type4Byte>&, const Var<Type4Byte>&)>>
     void ExclusiveScan(const compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& thread_datas,
                        compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& output_block_sums,
-                       ScanOp op)
+                       ScanOp         op,
+                       Var<Type4Byte> initial_value = Type4Byte(0))
     {
         using namespace luisa::compute;
         luisa::compute::set_block_size(BlockSize);
 
         compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD> prefix;
-        prefix[0] = Type4Byte(0);
+        prefix[0] = initial_value;
         $for(i, 1u, compute::UInt(ITEMS_PER_THREAD))
         {
             prefix[i] = op(prefix[i - 1], thread_datas[i - 1]);
@@ -131,7 +150,7 @@ class BlockScan : public LuisaModule
             $if(thid == 0)
             {
                 // clear the last element for exclusive scan
-                (*m_shared_mem)[block_size_ - 1] = 0;
+                (*m_shared_mem)[block_size_ - 1] = initial_value;
             };
             sync_block();
             // down-sweep
@@ -161,8 +180,26 @@ class BlockScan : public LuisaModule
     }
 
 
-    template <typename ScanOp = luisa::compute::Callable<Var<Type4Byte>(const Var<Type4Byte>&, Var<Type4Byte>&)>>
-    void InclusiveScan(const Var<Type4Byte>& thread_data, Var<Type4Byte>& output_block_sum, ScanOp op)
+    template <typename ScanOp = luisa::compute::Callable<Var<Type4Byte>(const Var<Type4Byte>&, const Var<Type4Byte>&)>>
+    void ExclusiveScan(const compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& thread_datas,
+                       compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& output_block_sums,
+                       Var<Type4Byte>& block_aggregate,
+                       ScanOp          op,
+                       Var<Type4Byte>  initial_value = Type4Byte(0))
+    {
+        ExclusiveScan(thread_datas, output_block_sums, op, initial_value);
+        $if(compute::thread_id().x == compute::UInt(BlockSize - 1))
+        {
+            block_aggregate = op(thread_datas[ITEMS_PER_THREAD - 1],
+                                 output_block_sums[ITEMS_PER_THREAD - 1]);
+        };
+    }
+
+    template <typename ScanOp = luisa::compute::Callable<Var<Type4Byte>(const Var<Type4Byte>&, const Var<Type4Byte>&)>>
+    void InclusiveScan(const Var<Type4Byte>& thread_data,
+                       Var<Type4Byte>&       output_block_sum,
+                       ScanOp                op,
+                       Var<Type4Byte>        initial_value = Type4Byte(0))
     {
         using namespace luisa::compute;
         luisa::compute::set_block_size(BlockSize);
@@ -191,7 +228,7 @@ class BlockScan : public LuisaModule
             $if(thid == 0)
             {
                 // clear the last element for exclusive scan
-                (*m_shared_mem)[block_size_ - 1] = 0;
+                (*m_shared_mem)[block_size_ - 1] = initial_value;
             };
             sync_block();
             // down-sweep
@@ -215,10 +252,26 @@ class BlockScan : public LuisaModule
         $else{};
     }
 
-    template <typename ScanOp = luisa::compute::Callable<Var<Type4Byte>(const Var<Type4Byte>&, Var<Type4Byte>&)>>
+    template <typename ScanOp = luisa::compute::Callable<Var<Type4Byte>(const Var<Type4Byte>&, const Var<Type4Byte>&)>>
+    void InclusiveScan(const Var<Type4Byte>& thread_data,
+                       Var<Type4Byte>&       output_block_sum,
+                       Var<Type4Byte>&       block_aggregate,
+                       ScanOp                op,
+                       Var<Type4Byte>        initial_value = Type4Byte(0))
+    {
+        InclusiveScan(thread_data, output_block_sum, op, initial_value);
+        $if(compute::thread_id().x == compute::UInt(BlockSize - 1))
+        {
+            block_aggregate = output_block_sum;
+        };
+    }
+
+
+    template <typename ScanOp = luisa::compute::Callable<Var<Type4Byte>(const Var<Type4Byte>&, const Var<Type4Byte>&)>>
     void InclusiveScan(const compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& thread_datas,
                        compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& output_block_sums,
-                       ScanOp op)
+                       ScanOp         op,
+                       Var<Type4Byte> initial_value = Type4Byte(0))
     {
         using namespace luisa::compute;
         luisa::compute::set_block_size(BlockSize);
@@ -257,7 +310,7 @@ class BlockScan : public LuisaModule
             $if(thid == 0)
             {
                 // clear the last element for exclusive scan
-                (*m_shared_mem)[block_size_ - 1] = 0;
+                (*m_shared_mem)[block_size_ - 1] = initial_value;
             };
             sync_block();
             // down-sweep
@@ -286,16 +339,25 @@ class BlockScan : public LuisaModule
         $else{};
     }
 
+    template <typename ScanOp = luisa::compute::Callable<Var<Type4Byte>(const Var<Type4Byte>&, const Var<Type4Byte>&)>>
+    void InclusiveScan(const compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& thread_datas,
+                       compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& output_block_sums,
+                       Var<Type4Byte>& block_aggregate,
+                       ScanOp          op,
+                       Var<Type4Byte>  initial_value = Type4Byte(0))
+    {
+        InclusiveScan(thread_datas, output_block_sums, op, initial_value);
+        $if(compute::thread_id().x == compute::UInt(BlockSize - 1))
+        {
+            block_aggregate = output_block_sums[ITEMS_PER_THREAD - 1];
+        };
+    }
+
+    // sum
+
     void ExclusiveSum(const Var<Type4Byte>& thread_data, Var<Type4Byte>& output_block_sum)
     {
         return ExclusiveScan(thread_data,
-                             output_block_sum,
-                             [](const Var<Type4Byte>& a, const Var<Type4Byte>& b)
-                             { return a + b; });
-    }
-    void InclusiveSum(const Var<Type4Byte>& thread_data, Var<Type4Byte>& output_block_sum)
-    {
-        return InclusiveScan(thread_data,
                              output_block_sum,
                              [](const Var<Type4Byte>& a, const Var<Type4Byte>& b)
                              { return a + b; });
@@ -309,11 +371,42 @@ class BlockScan : public LuisaModule
                              [](const Var<Type4Byte>& a, const Var<Type4Byte>& b)
                              { return a + b; });
     }
+
+    void ExclusiveSum(const compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& thread_data,
+                      compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& output_block_sum,
+                      Var<Type4Byte>& block_aggregate)
+    {
+        return ExclusiveScan(thread_data,
+                             output_block_sum,
+                             block_aggregate,
+                             [](const Var<Type4Byte>& a, const Var<Type4Byte>& b)
+                             { return a + b; });
+    }
+
+    void InclusiveSum(const Var<Type4Byte>& thread_data, Var<Type4Byte>& output_block_sum)
+    {
+        return InclusiveScan(thread_data,
+                             output_block_sum,
+                             [](const Var<Type4Byte>& a, const Var<Type4Byte>& b)
+                             { return a + b; });
+    }
+
     void InclusiveSum(const compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& thread_data,
                       compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& output_block_sum)
     {
         return InclusiveScan(thread_data,
                              output_block_sum,
+                             [](const Var<Type4Byte>& a, const Var<Type4Byte>& b)
+                             { return a + b; });
+    }
+
+    void InclusiveSum(const compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& thread_data,
+                      compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& output_block_sum,
+                      Var<Type4Byte>& block_aggregate)
+    {
+        return InclusiveScan(thread_data,
+                             output_block_sum,
+                             block_aggregate,
                              [](const Var<Type4Byte>& a, const Var<Type4Byte>& b)
                              { return a + b; });
     }
