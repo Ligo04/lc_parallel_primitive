@@ -7,7 +7,7 @@
 
 
 #pragma once
-#include "luisa/dsl/var.h"
+#include <luisa/dsl/var.h>
 #include <luisa/dsl/sugar.h>
 #include <lc_parallel_primitive/common/type_trait.h>
 #include <lc_parallel_primitive/runtime/core.h>
@@ -33,23 +33,25 @@ class BlockStore : public LuisaModule
 
   public:
     void Store(const compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& thread_data,
-               const compute::BufferVar<Type4Byte>& d_out)
+               const compute::BufferVar<Type4Byte>& d_out,
+               compute::UInt                        block_item_start)
     {
-        Store(thread_data, d_out, BlockSize * ITEMS_PER_THREAD);
+        Store(thread_data, d_out, block_item_start, compute::UInt(BlockSize * ITEMS_PER_THREAD));
     }
 
     void Store(const compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& thread_data,
                const compute::BufferVar<Type4Byte>& d_out,
+               compute::UInt                        block_item_start,
+               compute::UInt                        block_item_end,
                int                                  valid_items)
     {
         using namespace luisa::compute;
         luisa::compute::set_block_size(BlockSize);
-        UInt block_start = block_id().x * block_size_x() * UInt(ITEMS_PER_THREAD);
         UInt thid = thread_id().x;
 
         $if(DefaultStoreAlgorithm == BlockStoreAlgorithm::BLOCK_STORE_DIRECT)
         {
-            StoreDirectedBlocked(block_start + thid * UInt(ITEMS_PER_THREAD), thread_data, valid_items);
+            StoreDirectedBlocked(thid * UInt(ITEMS_PER_THREAD), thread_data, d_out, block_item_start, block_item_end);
         };
     };
 
@@ -57,15 +59,16 @@ class BlockStore : public LuisaModule
     void StoreDirectedBlocked(compute::UInt linear_tid,
                               const compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& thread_data,
                               const compute::BufferVar<Type4Byte>& d_out,
-                              int                                  valid_items)
+                              compute::UInt block_item_start,
+                              compute::UInt block_item_end)
     {
         using namespace luisa::compute;
         $for(i, 0u, compute::UInt(ITEMS_PER_THREAD))
         {
             UInt index = linear_tid * UInt(ITEMS_PER_THREAD) + i;
-            $if(index < valid_items)
+            $if(index < block_item_end)
             {
-                d_out.write(index, thread_data[i]);
+                d_out.write(block_item_start + index, thread_data[i]);
             };
         };
     };

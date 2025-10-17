@@ -2,7 +2,7 @@
  * @Author: Ligo 
  * @Date: 2025-09-19 14:24:07 
  * @Last Modified by: Ligo
- * @Last Modified time: 2025-10-15 11:55:17
+ * @Last Modified time: 2025-10-16 12:27:47
  */
 
 #pragma once
@@ -677,21 +677,32 @@ class DeviceReduce : public LuisaModule
                 set_block_size(BLOCK_SIZE);
                 UInt thid    = UInt(thread_id().x);
                 UInt tile_id = block_id().x;
-                UInt tile_offset = block_id().x * block_size_x() * UInt(ITEMS_PER_THREAD);
+                UInt tile_start = block_id().x * block_size_x() * UInt(ITEMS_PER_THREAD);
+
                 SmemTypePtr<KeyType> s_keys = new SmemType<KeyType>{shared_mem_size};
                 SmemTypePtr<ValueType> s_values = new SmemType<ValueType>{shared_mem_size};
                 SmemTypePtr<int> s_discontinutity = new SmemType<int>{shared_mem_size};
-
 
                 ArrayVar<KeyType, ITEMS_PER_THREAD>   local_keys;
                 ArrayVar<ValueType, ITEMS_PER_THREAD> local_values;
                 ArrayVar<int, ITEMS_PER_THREAD>       local_flags;
 
-                // Bool is_last_tile = tile_id != block_size_x() - 1u;
-                BlockLoad<KeyType, BLOCK_SIZE, ITEMS_PER_THREAD>(s_keys).Load(
-                    keys_in, local_keys, num_item);
-                BlockLoad<ValueType, BLOCK_SIZE, ITEMS_PER_THREAD>(s_values).Load(
-                    values_in, local_values, num_item);
+                Bool is_last_tile = block_id().x == (block_size_x() - 1u);
+
+                $if(is_last_tile)
+                {
+                    BlockLoad<KeyType, BLOCK_SIZE, ITEMS_PER_THREAD>(s_keys).Load(
+                        keys_in, local_keys, tile_start, num_item - tile_start);
+                    BlockLoad<ValueType, BLOCK_SIZE, ITEMS_PER_THREAD>(s_values).Load(
+                        values_in, local_values, tile_start, num_item - tile_start);
+                }
+                $else
+                {
+                    BlockLoad<KeyType, BLOCK_SIZE, ITEMS_PER_THREAD>(s_keys).Load(
+                        keys_in, local_keys, tile_start);
+                    BlockLoad<ValueType, BLOCK_SIZE, ITEMS_PER_THREAD>(s_values).Load(
+                        values_in, local_values, tile_start);
+                };
 
                 // load per keys
                 Var<KeyType> tile_predecessor;
@@ -703,7 +714,7 @@ class DeviceReduce : public LuisaModule
                     }
                     $else
                     {
-                        tile_predecessor = keys_in.read(tile_offset - 1);
+                        tile_predecessor = keys_in.read(tile_start - 1);
                     };
                 };
                 sync_block();
@@ -722,19 +733,20 @@ class DeviceReduce : public LuisaModule
                 };
 
 
-                auto scan_by_key_op = [&](const Var<KeyValuePair<int, ValueType>>& a,
-                                          const Var<KeyValuePair<int, ValueType>>& b)
+                auto reduce_seg_by_key_op =
+                    [&](const Var<KeyValuePair<int, ValueType>>& a,
+                        const Var<KeyValuePair<int, ValueType>>& b)
                 {
                     Var<KeyValuePair<int, ValueType>> result;
+                    result.key = a.key + b.key;
                     $if(b.key == 1)
-                    {  // new segment
-                        result.key   = a.key + 1;
+                    {
                         result.value = b.value;
                     }
                     $else
                     {
-                        result.key   = a.key;
-                        result.value = reduce_op(a.value, b.value);
+                        auto v2      = b.value;
+                        result.value = reduce_op(a.value, v2);
                     };
                     return result;
                 };
@@ -744,17 +756,17 @@ class DeviceReduce : public LuisaModule
                 Var<KeyValuePair<int, ValueType>> block_aggregate{0, 0};
 
                 BlockScan<KeyValuePair<int, ValueType>, BLOCK_SIZE, ITEMS_PER_THREAD>()
-                    .ExclusiveScan(scan_items, scan_output, block_aggregate, scan_by_key_op, initial);
+                    .ExclusiveScan(scan_items, scan_output, block_aggregate, reduce_seg_by_key_op, initial);
 
-                // device_log("thid {},key {},value {},flags {}, scan_output_key {}, scan_output_value {}, block_aggregate key {}, value {}",
-                //            block_id().x * block_size().x * UInt(ITEMS_PER_THREAD) + thid,
-                //            local_keys[0],
-                //            local_values[0],
-                //            local_flags[0],
-                //            scan_output[0].key,
-                //            scan_output[0].value,
-                //            block_aggregate.key,
-                //            block_aggregate.value);
+                device_log("thid {},key {},value {},flags {}, scan_output_key {}, scan_output_value {}, block_aggregate key {}, value {}",
+                           block_id().x * block_size().x * UInt(ITEMS_PER_THREAD) + thid,
+                           local_keys[0],
+                           local_values[0],
+                           local_flags[0],
+                           scan_output[0].key,
+                           scan_output[0].value,
+                           block_aggregate.key,
+                           block_aggregate.value);
             });
 
         ms_reduce_by_key_map.try_emplace(get_key_value_op_shader_desc<KeyType, ValueType>(reduce_op),

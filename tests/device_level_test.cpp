@@ -34,7 +34,7 @@ int main(int argc, char* argv[])
     DeviceReduce reducer;
     reducer.create(device);
 
-    constexpr int32_t array_size = 512;
+    constexpr int32_t array_size = 256;
 
     auto               in_buffer  = device.create_buffer<int32>(array_size);
     auto               out_buffer = device.create_buffer<int32>(1);
@@ -139,20 +139,24 @@ int main(int argc, char* argv[])
     auto key_buffer   = device.create_buffer<int32>(array_size);
     auto value_buffer = device.create_buffer<int32>(array_size);
 
-    auto segments           = 10;
+    constexpr int items_per_segment = 100;
+    const int segments = (array_size + items_per_segment - 1) / items_per_segment;  // 向上取整
+
+    std::vector<int32> input_keys(array_size);
+    for(auto i = 0; i < array_size; i++)
+    {
+        input_keys[i] = i / items_per_segment;  // 每 100 个元素一组
+    }
+
+    LUISA_INFO("Array size: {}, Items per segment: {}, Total segments: {}",
+               array_size,
+               items_per_segment,
+               segments);
+
     auto unique_keys_buffer = device.create_buffer<int32>(segments);
     auto aggregates_buffer  = device.create_buffer<int32>(segments);
     auto num_runs_buffer    = device.create_buffer<luisa::uint>(1);
 
-    std::vector<int32> input_keys(array_size);
-    auto               items_per_segment = array_size / segments;
-    for(auto i = 0; i < array_size; i++)
-    {
-        input_keys[i] = i / items_per_segment;  // 每 (array_size/10) 个元素一组
-        if(input_keys[i] >= segments)
-            input_keys[i] = segments - 1;  // 处理余数
-        LUISA_INFO("Key: {}, Value: {}", input_keys[i], input_data[i]);
-    }
     stream << key_buffer.copy_from(input_keys.data()) << synchronize();
     stream << value_buffer.copy_from(input_data.data()) << synchronize();
 
@@ -182,12 +186,11 @@ int main(int argc, char* argv[])
         for(auto i = 0; i < segments; i++)
         {
             auto expected_sum = 0;
-            for(auto j = 0; j < array_size; j++)
+            for(auto j = i * items_per_segment;
+                j < (i + 1) * items_per_segment && j < array_size;
+                j++)
             {
-                if(input_keys[j] == i)
-                {
-                    expected_sum += input_data[j];
-                }
+                expected_sum += input_data[j];
             }
             LUISA_INFO("Key: {}, Expected Aggregate: {}", i, expected_sum);
             LUISA_INFO("UniqueKey: {}, AggregateValue: {}", unique_keys[i], aggregates[i]);

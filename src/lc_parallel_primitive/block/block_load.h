@@ -2,7 +2,7 @@
  * @Author: Ligo 
  * @Date: 2025-10-14 14:01:20 
  * @Last Modified by: Ligo
- * @Last Modified time: 2025-10-15 10:57:10
+ * @Last Modified time: 2025-10-16 11:16:12
  */
 #pragma once
 
@@ -33,33 +33,40 @@ class BlockLoad : public LuisaModule
 
   public:
     void Load(const compute::BufferVar<Type4Byte>&            d_in,
-              compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& thread_data)
+              compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& thread_data,
+              compute::UInt                                   block_item_start)
     {
-        Load(d_in, thread_data, UInt(BlockSize * ITEMS_PER_THREAD), Type4Byte(0));
+        Load(d_in,
+             thread_data,
+             block_item_start,
+             compute::UInt(BlockSize * ITEMS_PER_THREAD),
+             Type4Byte(0));
     }
 
     void Load(const compute::BufferVar<Type4Byte>&            d_in,
               compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& thread_data,
+              compute::UInt                                   block_item_start,
               compute::UInt                                   block_item_end)
     {
-        Load(d_in, thread_data, block_item_end, Type4Byte(0));
+        Load(d_in, thread_data, block_item_start, block_item_end, Type4Byte(0));
     }
 
     void Load(const compute::BufferVar<Type4Byte>&            d_in,
               compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& thread_data,
+              compute::UInt                                   block_item_start,
               compute::UInt                                   block_item_end,
-              Type4Byte                                       default_value)
+              Var<Type4Byte>                                  default_value)
     {
         using namespace luisa::compute;
         luisa::compute::set_block_size(BlockSize);
-        UInt block_start = block_id().x * block_size_x() * UInt(ITEMS_PER_THREAD);
         UInt thid = thread_id().x;
 
         $if(DefaultLoadAlgorithm == BlockLoadAlgorithm::BLOCK_LOAD_DIRECT)
         {
-            LoadDirectedBlocked(block_start + thid * UInt(ITEMS_PER_THREAD),
+            LoadDirectedBlocked(thid * UInt(ITEMS_PER_THREAD),
                                 d_in,
                                 thread_data,
+                                block_item_start,
                                 block_item_end,
                                 default_value);
         };
@@ -70,6 +77,7 @@ class BlockLoad : public LuisaModule
     void LoadDirectedBlocked(compute::UInt                        linear_tid,
                              const compute::BufferVar<Type4Byte>& d_in,
                              compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& thread_data,
+                             compute::UInt  block_item_start,
                              compute::UInt  block_item_end,
                              Var<Type4Byte> default_value)
     {
@@ -79,7 +87,7 @@ class BlockLoad : public LuisaModule
             UInt index = linear_tid * UInt(ITEMS_PER_THREAD) + i;
             $if(index < block_item_end)
             {
-                thread_data[i] = d_in.read(index);
+                thread_data[i] = d_in.read(block_item_start + index);
             }
             $else
             {
