@@ -2,7 +2,7 @@
  * @Author: Ligo 
  * @Date: 2025-10-14 16:49:47 
  * @Last Modified by: Ligo
- * @Last Modified time: 2025-10-15 10:36:13
+ * @Last Modified time: 2025-10-20 14:48:57
  */
 
 
@@ -20,7 +20,7 @@ enum class BlockStoreAlgorithm
     BLOCK_STORE_TRANSPOSE = 1
 };
 
-template <NumericT Type4Byte, size_t BlockSize = 256, size_t ITEMS_PER_THREAD = 2, BlockStoreAlgorithm DefaultStoreAlgorithm = BlockStoreAlgorithm::BLOCK_STORE_DIRECT>
+template <typename Type4Byte, size_t BlockSize = 256, size_t ITEMS_PER_THREAD = 2, BlockStoreAlgorithm DefaultStoreAlgorithm = BlockStoreAlgorithm::BLOCK_STORE_DIRECT>
 class BlockStore : public LuisaModule
 {
   public:
@@ -28,6 +28,7 @@ class BlockStore : public LuisaModule
         : m_shared_mem(shared_mem)
     {
     }
+    BlockStore() {}
 
     ~BlockStore() = default;
 
@@ -42,8 +43,7 @@ class BlockStore : public LuisaModule
     void Store(const compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& thread_data,
                const compute::BufferVar<Type4Byte>& d_out,
                compute::UInt                        block_item_start,
-               compute::UInt                        block_item_end,
-               int                                  valid_items)
+               compute::UInt                        block_item_end)
     {
         using namespace luisa::compute;
         luisa::compute::set_block_size(BlockSize);
@@ -65,7 +65,7 @@ class BlockStore : public LuisaModule
         using namespace luisa::compute;
         $for(i, 0u, compute::UInt(ITEMS_PER_THREAD))
         {
-            UInt index = linear_tid * UInt(ITEMS_PER_THREAD) + i;
+            UInt index = linear_tid + i;
             $if(index < block_item_end)
             {
                 d_out.write(block_item_start + index, thread_data[i]);

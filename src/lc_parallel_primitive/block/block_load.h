@@ -2,7 +2,7 @@
  * @Author: Ligo 
  * @Date: 2025-10-14 14:01:20 
  * @Last Modified by: Ligo
- * @Last Modified time: 2025-10-16 11:16:12
+ * @Last Modified time: 2025-10-20 14:37:10
  */
 #pragma once
 
@@ -28,6 +28,7 @@ class BlockLoad : public LuisaModule
         : m_shared_mem(shared_mem)
     {
     }
+    BlockLoad() {}
 
     ~BlockLoad() = default;
 
@@ -84,7 +85,7 @@ class BlockLoad : public LuisaModule
         using namespace luisa::compute;
         $for(i, 0u, compute::UInt(ITEMS_PER_THREAD))
         {
-            UInt index = linear_tid * UInt(ITEMS_PER_THREAD) + i;
+            UInt index = linear_tid + i;
             $if(index < block_item_end)
             {
                 thread_data[i] = d_in.read(block_item_start + index);

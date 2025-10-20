@@ -2,14 +2,15 @@
  * @Author: Ligo 
  * @Date: 2025-09-29 11:30:37 
  * @Last Modified by: Ligo
- * @Last Modified time: 2025-10-17 11:16:44
+ * @Last Modified time: 2025-10-20 14:55:53
  */
 #pragma once
 
-#include "luisa/dsl/var.h"
+#include <luisa/dsl/var.h>
+#include <luisa/dsl/builtin.h>
 #include <lc_parallel_primitive/common/type_trait.h>
 #include <lc_parallel_primitive/runtime/core.h>
-#include <luisa/dsl/builtin.h>
+#include <lc_parallel_primitive/warp/details/warp_scan_shlf.h>
 
 namespace luisa::parallel_primitive
 {
@@ -46,27 +47,15 @@ class WarpScan : public LuisaModule
     void ExclusiveScan(const Var<Type4Byte>& thread_data,
                        Var<Type4Byte>&       exclusive_output,
                        ScanOp                scan_op,
-                       const Var<Type4Byte>& initial_value = Type4Byte(0))
+                       const Var<Type4Byte>& initial_value)
     {
         compute::set_warp_size(WARP_SIZE);
-        Var<Type4Byte> result = thread_data;
-        $if(WarpScanMethod == WarpScanAlgorithm::WARP_SHARED_MEMORY)
+        $if(WarpScanMethod == WarpScanAlgorithm::WARP_SHUFFLE)
         {
-            compute::UInt land_id   = compute::warp_lane_id();
-            compute::UInt wave_size = compute::warp_lane_count();
-
-            // TODO: sync_warp()
+            details::WarpScanShfl<Type4Byte, WARP_SIZE>().ExclusiveScan(
+                thread_data, exclusive_output, scan_op, initial_value);
         }
-        $elif(WarpScanMethod == WarpScanAlgorithm::WARP_SHUFFLE)
-        {
-            InclusiveScan(thread_data, result, scan_op, initial_value);
-            result = compute::warp_read_lane(result, compute::warp_lane_id() - 1u);
-            $if(compute::warp_lane_id() == 0u)
-            {
-                result = initial_value;
-            };
-        };
-        exclusive_output = result;
+        $elif(WarpScanMethod == WarpScanAlgorithm::WARP_SHARED_MEMORY){};
     }
 
     template <typename ScanOp>
@@ -77,65 +66,34 @@ class WarpScan : public LuisaModule
                        const Var<Type4Byte>& initial_value = Type4Byte(0))
     {
         compute::set_warp_size(WARP_SIZE);
-        Var<Type4Byte> result;
-        $if(WarpScanMethod == WarpScanAlgorithm::WARP_SHARED_MEMORY)
-        {
-            compute::UInt land_id   = compute::warp_lane_id();
-            compute::UInt wave_size = compute::warp_lane_count();
 
-            // TODO: sync_warp()
+        $if(WarpScanMethod == WarpScanAlgorithm::WARP_SHUFFLE)
+        {
+            details::WarpScanShfl<Type4Byte, WARP_SIZE>().ExclusiveScan(
+                thread_data, exclusive_output, warp_aggregate, scan_op, initial_value);
         }
-        $elif(WarpScanMethod == WarpScanAlgorithm::WARP_SHUFFLE)
-        {
-            InclusiveScan(thread_data, result, warp_aggregate, scan_op, initial_value);
-            result = compute::warp_read_lane(result, compute::warp_lane_id() - 1u);
-            $if(compute::warp_lane_id() == 0u)
-            {
-                result = initial_value;
-            };
-        };
-        exclusive_output = result;
+        $elif(WarpScanMethod == WarpScanAlgorithm::WARP_SHARED_MEMORY){};
     }
 
-
     template <typename ScanOp>
-    void InclusiveScan(const Var<Type4Byte>& d_in, Var<Type4Byte>& out, ScanOp op)
+    void InclusiveScan(const Var<Type4Byte>& thread_in, Var<Type4Byte>& inclusive_output, ScanOp op)
     {
-        InclusiveScan(d_in, out, op, Type4Byte(0));
+        InclusiveScan(thread_in, inclusive_output, op, Type4Byte(0));
     }
 
     template <typename ScanOp>
-    void InclusiveScan(const Var<Type4Byte>& thread_input,
-                       Var<Type4Byte>&       inclusive_out,
+    void InclusiveScan(const Var<Type4Byte>& thread_data,
+                       Var<Type4Byte>&       inclusive_output,
                        ScanOp                scan_op,
-                       const Var<Type4Byte>& initial_value = Type4Byte(0))
+                       const Var<Type4Byte>& initial_value)
     {
         compute::set_warp_size(WARP_SIZE);
-        $if(WarpScanMethod == WarpScanAlgorithm::WARP_SHARED_MEMORY)
+        $if(WarpScanMethod == WarpScanAlgorithm::WARP_SHUFFLE)
         {
-            compute::UInt land_id   = compute::warp_lane_id();
-            compute::UInt wave_size = compute::warp_lane_count();
-
-            // TODO: sync_warp()
+            details::WarpScanShfl<Type4Byte, WARP_SIZE>().InclusiveScan(
+                thread_data, inclusive_output, scan_op, initial_value);
         }
-        $elif(WarpScanMethod == WarpScanAlgorithm::WARP_SHUFFLE)
-        {
-            compute::UInt land_id   = compute::warp_lane_id();
-            compute::UInt wave_size = compute::warp_lane_count();
-
-            Var<Type4Byte> output = thread_input;
-            compute::UInt  offset = 1u;
-            $while(offset < wave_size)
-            {
-                Var<Type4Byte> temp = compute::warp_read_lane(output, land_id - offset);
-                $if(land_id >= offset)
-                {
-                    output = scan_op(temp, output);
-                };
-                offset <<= 1;
-            };
-            inclusive_out = output;
-        };
+        $elif(WarpScanMethod == WarpScanAlgorithm::WARP_SHUFFLE){};
     }
 
     template <typename ScanOp>
@@ -146,18 +104,10 @@ class WarpScan : public LuisaModule
                        const Var<Type4Byte>& initial_value = Type4Byte(0))
     {
         compute::set_warp_size(WARP_SIZE);
-        $if(WarpScanMethod == WarpScanAlgorithm::WARP_SHARED_MEMORY)
+        $if(WarpScanMethod == WarpScanAlgorithm::WARP_SHUFFLE)
         {
-            compute::UInt land_id   = compute::warp_lane_id();
-            compute::UInt wave_size = compute::warp_lane_count();
-
-            // TODO: sync_warp()
-        }
-        $elif(WarpScanMethod == WarpScanAlgorithm::WARP_SHUFFLE)
-        {
-            InclusiveScan(thread_data, inclusive_output, scan_op, initial_value);
-            warp_aggregate = compute::warp_read_lane(inclusive_output,
-                                                     compute::warp_lane_count() - 1u);
+            details::WarpScanShfl<Type4Byte, WARP_SIZE>().InclusiveScan(
+                thread_data, inclusive_output, warp_aggregate, scan_op, initial_value);
         };
     }
 
@@ -206,6 +156,20 @@ class WarpScan : public LuisaModule
             [](const Var<Type4Byte>& a, const Var<Type4Byte>& b)
             { return a + b; },
             Type4Byte(0));
+    }
+
+    template <typename ScanOp>
+    void Scan(const Var<Type4Byte>& thread_data,
+              Var<Type4Byte>&       inclusive_output,
+              Var<Type4Byte>&       exclusive_output,
+              ScanOp                scan_op)
+    {
+        compute::set_warp_size(WARP_SIZE);
+        $if(WarpScanMethod == WarpScanAlgorithm::WARP_SHUFFLE)
+        {
+            details::WarpScanShfl<Type4Byte, WARP_SIZE>().Scan(
+                thread_data, inclusive_output, exclusive_output, scan_op);
+        };
     }
 
   private:

@@ -138,10 +138,10 @@ int main(int argc, char* argv[])
                                 0);
             for(auto j = 0; j < WARP_SIZE; ++j)
             {
-                // LUISA_INFO("index: {}, index_result: {}, warp_reduce_result: {}",
-                //            i * WARP_SIZE + j,
-                //            exclusive_scan_result[j],
-                //            scan_result[i * WARP_SIZE + j]);
+                LUISA_INFO("index: {}, index_result: {}, warp_reduce_result: {}",
+                           i * WARP_SIZE + j,
+                           exclusive_scan_result[j],
+                           scan_result[i * WARP_SIZE + j]);
                 expect(exclusive_scan_result[j] == scan_result[i * WARP_SIZE + j]);
             }
         };

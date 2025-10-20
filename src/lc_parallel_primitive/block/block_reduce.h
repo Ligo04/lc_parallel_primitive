@@ -2,7 +2,7 @@
  * @Author: Ligo 
  * @Date: 2025-09-28 16:54:51 
  * @Last Modified by: Ligo
- * @Last Modified time: 2025-10-15 11:15:28
+ * @Last Modified time: 2025-10-20 14:57:06
  */
 
 #pragma once
@@ -13,6 +13,9 @@
 #include <luisa/dsl/func.h>
 #include <lc_parallel_primitive/common/type_trait.h>
 #include <lc_parallel_primitive/runtime/core.h>
+#include <lc_parallel_primitive/block/detail/block_reduce_warp.h>
+#include <lc_parallel_primitive/block/detail/block_reduce_mem.h>
+#include <lc_parallel_primitive/thread/thread_reduce.h>
 #include <cstddef>
 
 namespace luisa::parallel_primitive
@@ -23,15 +26,19 @@ enum class DefaultBlockReduceAlgorithm
     WARP_SHUFFLE
 };
 
-template <NumericT Type4Byte, size_t BlockSize = 256, size_t ITEMS_PER_THREAD = 2, DefaultBlockReduceAlgorithm Algorithm = DefaultBlockReduceAlgorithm::SHARED_MEMORY>
+template <NumericT Type4Byte, size_t BlockSize = 256, size_t ITEMS_PER_THREAD = 2, size_t WARP_SIZE = 32, DefaultBlockReduceAlgorithm Algorithm = DefaultBlockReduceAlgorithm::WARP_SHUFFLE>
 class BlockReduce : public LuisaModule
 {
   public:
     BlockReduce()
     {
-        if(Algorithm == DefaultBlockReduceAlgorithm::SHARED_MEMORY)
+        $if(Algorithm == DefaultBlockReduceAlgorithm::SHARED_MEMORY)
         {
             m_shared_mem = new SmemType<Type4Byte>{BlockSize};
+        }
+        $elif(Algorithm == DefaultBlockReduceAlgorithm::WARP_SHUFFLE)
+        {
+            m_shared_mem = new SmemType<Type4Byte>{BlockSize / WARP_SIZE};
         };
     };
     BlockReduce(SmemTypePtr<Type4Byte>& shared_mem)
@@ -40,128 +47,81 @@ class BlockReduce : public LuisaModule
 
   public:
     template <typename ReduceOp = luisa::compute::Callable<Var<Type4Byte>(const Var<Type4Byte>&, const Var<Type4Byte>&)>>
-    Var<Type4Byte> Reduce(const Var<Type4Byte>& thread_data, ReduceOp op)
+    Var<Type4Byte> Reduce(const Var<Type4Byte>& thread_data,
+                          ReduceOp              reduce_op,
+                          compute::UInt         num_item = BlockSize)
     {
-        Var<Type4Byte> result = Type4Byte(0);
+        Var<Type4Byte> result;
+        compute::UInt  valid_item = compute::block_size().x;
+        compute::UInt  block_offset =
+            compute::block_id().x * compute::block_size().x;
+        $if(block_offset + compute::block_size().x < num_item)
+        {
+            valid_item = num_item - block_offset;
+        };
         $if(Algorithm == DefaultBlockReduceAlgorithm::SHARED_MEMORY)
         {
-            using namespace luisa::compute;
-            luisa::compute::set_block_size(BlockSize);
-            Int thid              = Int(thread_id().x);
-            (*m_shared_mem)[thid] = thread_data;
-            sync_block();
-            UInt stride = BlockSize >> 1;
-            $while(stride > 0)
-            {
-                $if(thid < stride)
-                {
-                    (*m_shared_mem)[thid] =
-                        op((*m_shared_mem)[thid], (*m_shared_mem)[thid + stride]);
-                };
-                sync_block();
-                stride >>= 1;
-            };
-
-            $if(thid == 0)
-            {
-                result = (*m_shared_mem)[0];
-            };
+            result = details::BlockReduceMem<Type4Byte, BlockSize>().Reduce(
+                m_shared_mem, thread_data, reduce_op, valid_item);
         }
-        $else
+        $elif(Algorithm == DefaultBlockReduceAlgorithm::WARP_SHUFFLE)
         {
-            //TODO: implement block-level reduce using warp shuffle
-            using namespace luisa::compute;
-            luisa::compute::set_block_size(BlockSize);
-            Int thid    = Int(thread_id().x);
-            Int warp_id = thid / 32;
-            Int lane_id = thid % 32;
-
-            result = thread_data;
+            result = details::BlockReduceShfl<Type4Byte, BlockSize>().Reduce(
+                m_shared_mem, thread_data, reduce_op, valid_item);
         };
         return result;
     };
 
-    Var<Type4Byte> Sum(const Var<Type4Byte>& d_in)
+    Var<Type4Byte> Sum(const Var<Type4Byte>& d_in, compute::UInt num_item)
     {
-        return Reduce(d_in,
-                      [](const Var<Type4Byte>& a, const Var<Type4Byte>& b)
-                      { return a + b; });
+        return Reduce(
+            d_in,
+            [](const Var<Type4Byte>& a, const Var<Type4Byte>& b)
+            { return a + b; },
+            num_item);
     }
 
-    Var<Type4Byte> Max(const Var<Type4Byte>& d_in)
+    Var<Type4Byte> Max(const Var<Type4Byte>& d_in, compute::UInt num_item)
     {
-        return Reduce(d_in, luisa::compute::max);
+        return Reduce(d_in, luisa::compute::max, num_item);
     }
 
-    Var<Type4Byte> Min(const Var<Type4Byte>& d_in)
+    Var<Type4Byte> Min(const Var<Type4Byte>& d_in, compute::UInt num_item)
     {
-        return Reduce(d_in, luisa::compute::min);
+        return Reduce(d_in, luisa::compute::min, num_item);
     }
 
     template <typename ReduceOp = luisa::compute::Callable<Var<Type4Byte>(const Var<Type4Byte>&, const Var<Type4Byte>&)>>
     Var<Type4Byte> Reduce(const compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& thread_data,
-                          ReduceOp op)
+                          ReduceOp      op,
+                          compute::UInt num_item)
     {
-        Var<Type4Byte> result = Type4Byte(0);
+        Var<Type4Byte> thread_agg =
+            ThreadReduce<Type4Byte>().Reduce<ITEMS_PER_THREAD>(thread_data, op);
 
-        // first, each thread reduce its own data
-        Var<Type4Byte> thread_agg = thread_data[0];
-        $for(i, 1u, compute::UInt(ITEMS_PER_THREAD))
-        {
-            thread_agg = op(thread_agg, thread_data[i]);
-        };
-
-        $if(Algorithm == DefaultBlockReduceAlgorithm::SHARED_MEMORY)
-        {
-            using namespace luisa::compute;
-            luisa::compute::set_block_size(BlockSize);
-            Int thid              = Int(thread_id().x);
-            (*m_shared_mem)[thid] = thread_agg;
-            sync_block();
-            UInt stride = BlockSize >> 1;
-            $while(stride > 0)
-            {
-                $if(thid < stride)
-                {
-                    (*m_shared_mem)[thid] =
-                        op((*m_shared_mem)[thid], (*m_shared_mem)[thid + stride]);
-                };
-                sync_block();
-                stride >>= 1;
-            };
-
-            $if(thid == 0)
-            {
-                result = (*m_shared_mem)[0];
-            };
-        }
-        $else
-        {
-            //TODO: implement block-level reduce using warp shuffle
-            using namespace luisa::compute;
-            luisa::compute::set_block_size(BlockSize);
-            Int thid    = Int(thread_id().x);
-            Int warp_id = thid / 32;
-            Int lane_id = thid % 32;
-        };
-        return result;
+        return Reduce(thread_agg, op, num_item);
     };
 
-    Var<Type4Byte> Sum(const compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& d_in)
+    Var<Type4Byte> Sum(const compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& d_in,
+                       compute::UInt num_item)
     {
-        return Reduce(d_in,
-                      [](const Var<Type4Byte>& a, const Var<Type4Byte>& b)
-                      { return a + b; });
+        return Reduce(
+            d_in,
+            [](const Var<Type4Byte>& a, const Var<Type4Byte>& b)
+            { return a + b; },
+            num_item);
     }
 
-    Var<Type4Byte> Max(const compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& d_in)
+    Var<Type4Byte> Max(const compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& d_in,
+                       compute::UInt num_item)
     {
-        return Reduce(d_in, luisa::compute::max);
+        return Reduce(d_in, luisa::compute::max, num_item);
     }
 
-    Var<Type4Byte> Min(const compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& d_in)
+    Var<Type4Byte> Min(const compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& d_in,
+                       compute::UInt num_item)
     {
-        return Reduce(d_in, luisa::compute::min);
+        return Reduce(d_in, luisa::compute::min, num_item);
     }
 
   private:
