@@ -46,6 +46,15 @@ class BlockDiscontinuity : public LuisaModule
                    const compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& input,
                    FlagOp flag_op = Default_flag_op)
     {
+        FlagHeads(head_flags, compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>{}, input, flag_op);
+    };
+
+    template <typename FlagOp>
+    void FlagHeads(compute::ArrayVar<int, ITEMS_PER_THREAD>&       head_flags,
+                   compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& prev_input,
+                   const compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& input,
+                   FlagOp flag_op = Default_flag_op)
+    {
         using namespace luisa::compute;
         luisa::compute::set_block_size(BlockSize);
         Int thid = Int(thread_id().x);
@@ -65,19 +74,31 @@ class BlockDiscontinuity : public LuisaModule
                 }
                 $else
                 {
-                    head_flags[i] = ApplyOp(
-                        flag_op, input[i], (*m_shared_data.last_element)[thid - 1], i);
+                    prev_input[i] = (*m_shared_data.last_element)[thid - 1];
+                    head_flags[i] = ApplyOp(flag_op, input[i], prev_input[i], i);
                 };
             }
             $else
             {
-                head_flags[i] = ApplyOp(flag_op, input[i], input[i - 1], i);
+                prev_input[i] = input[i - 1];
+                head_flags[i] = ApplyOp(flag_op, input[i], prev_input[i], i);
             };
         };
     };
 
+
     template <typename FlagOp>
     void FlagHeads(compute::ArrayVar<int, ITEMS_PER_THREAD>& head_flags,
+                   const compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& input,
+                   FlagOp                flag_op,
+                   const Var<Type4Byte>& tile_predecessor_item)
+    {
+        FlagHeads(head_flags, compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>{}, input, flag_op, tile_predecessor_item);
+    };
+
+    template <typename FlagOp>
+    void FlagHeads(compute::ArrayVar<int, ITEMS_PER_THREAD>&       head_flags,
+                   compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& prev_input,
                    const compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& input,
                    FlagOp                flag_op,
                    const Var<Type4Byte>& tile_predecessor_item)
@@ -97,20 +118,23 @@ class BlockDiscontinuity : public LuisaModule
             {
                 $if(thid == 0)
                 {
-                    head_flags[i] = ApplyOp(flag_op, input[i], tile_predecessor_item, i);
+                    prev_input[i] = tile_predecessor_item;
+                    head_flags[i] = ApplyOp(flag_op, input[i], prev_input[i], i);
                 }
                 $else
                 {
-                    head_flags[i] = ApplyOp(
-                        flag_op, input[i], (*m_shared_data.last_element)[thid - 1], i);
+                    prev_input[i] = (*m_shared_data.last_element)[thid - 1];
+                    head_flags[i] = ApplyOp(flag_op, input[i], prev_input[i], i);
                 };
             }
             $else
             {
-                head_flags[i] = ApplyOp(flag_op, input[i], input[i - 1], i);
+                prev_input[i] = input[i - 1];
+                head_flags[i] = ApplyOp(flag_op, input[i], prev_input[i], i);
             };
         };
     };
+
 
     template <typename FlagOp>
     void FlagTail(compute::ArrayVar<int, ITEMS_PER_THREAD>& tail_flags,
@@ -146,6 +170,7 @@ class BlockDiscontinuity : public LuisaModule
             };
         };
     };
+
 
     template <typename FlagOp>
     void FlagTail(compute::ArrayVar<int, ITEMS_PER_THREAD>& tail_flags,

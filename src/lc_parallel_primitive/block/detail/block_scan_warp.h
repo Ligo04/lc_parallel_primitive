@@ -2,7 +2,7 @@
  * @Author: Ligo 
  * @Date: 2025-10-17 15:33:13 
  * @Last Modified by: Ligo
- * @Last Modified time: 2025-10-20 22:41:08
+ * @Last Modified time: 2025-10-21 22:20:57
  */
 
 #pragma once
@@ -130,10 +130,10 @@ namespace details
             $if(lane_id == warp_lane_count() - 1)
             {
                 (*m_shared_mem)[warp_id] = warp_aggregate;
-                device_log("thid:{} - warp_id {}, warp_aggregate {}",
-                           compute::dispatch_id().x,
-                           warp_id,
-                           warp_aggregate);
+                // device_log("thid:{} - warp_id {}, warp_aggregate {}",
+                //            compute::dispatch_id().x,
+                //            warp_id,
+                //            warp_aggregate);
             };
 
             sync_block();

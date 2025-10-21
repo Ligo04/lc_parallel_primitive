@@ -2,7 +2,7 @@
  * @Author: Ligo 
  * @Date: 2025-10-17 15:00:46 
  * @Last Modified by: Ligo
- * @Last Modified time: 2025-10-20 22:42:28
+ * @Last Modified time: 2025-10-21 22:57:00
  */
 
 
@@ -107,11 +107,11 @@ namespace details
                 offset <<= 1;
             };
             inclusive_output = output;
-            device_log("thid:{} - lane_id {}, inclusive_output {},input {}",
-                       compute::dispatch_id().x,
-                       lane_id,
-                       inclusive_output,
-                       thread_input);
+            // device_log("thid:{} - lane_id {}, inclusive_output {},input {}",
+            //            compute::dispatch_id().x,
+            //            lane_id,
+            //            inclusive_output,
+            //            thread_input);
         }
 
         template <typename ScanOp>
