@@ -2,10 +2,11 @@
  * @Author: Ligo 
  * @Date: 2025-10-17 15:33:13 
  * @Last Modified by: Ligo
- * @Last Modified time: 2025-10-20 14:45:03
+ * @Last Modified time: 2025-10-20 22:41:08
  */
 
 #pragma once
+#include "luisa/dsl/stmt.h"
 #include <luisa/dsl/sugar.h>
 #include <luisa/dsl/func.h>
 #include <luisa/dsl/var.h>
@@ -23,7 +24,7 @@ namespace details
     template <typename Type4Byte, size_t BLOCK_SIZE = 256, size_t WARP_SIZE = 32>
     struct BlockScanShfl
     {
-        template <typename ScanOp = luisa::compute::Callable<Var<Type4Byte>(const Var<Type4Byte>&, const Var<Type4Byte>&)>>
+        template <typename ScanOp>
         void ExclusiveScan(SmemTypePtr<Type4Byte>& m_shared_mem,
                            const Var<Type4Byte>&   thread_data,
                            Var<Type4Byte>&         exclusive_output,
@@ -49,7 +50,7 @@ namespace details
             };
         }
 
-        template <typename ScanOp = luisa::compute::Callable<Var<Type4Byte>(const Var<Type4Byte>&, const Var<Type4Byte>&)>>
+        template <typename ScanOp>
         void ExclusiveScan(SmemTypePtr<Type4Byte>& m_shared_mem,
                            const Var<Type4Byte>&   thread_data,
                            Var<Type4Byte>&         exclusive_output,
@@ -68,7 +69,7 @@ namespace details
             UInt lane_id = warp_lane_id();
             $if(warp_id != 0)
             {
-                exclusive_output = scan_op(warp_prefix, exclusive_output);
+                exclusive_output = scan_op(exclusive_output, warp_prefix);
                 $if(lane_id == 0)
                 {
                     exclusive_output = warp_prefix;
@@ -76,7 +77,7 @@ namespace details
             };
         }
 
-        template <typename ScanOp = luisa::compute::Callable<Var<Type4Byte>(const Var<Type4Byte>&, const Var<Type4Byte>&)>>
+        template <typename ScanOp>
         void InclusiveScan(SmemTypePtr<Type4Byte>& m_shared_mem,
                            const Var<Type4Byte>&   thread_data,
                            Var<Type4Byte>&         inclusive_output,
@@ -95,7 +96,7 @@ namespace details
             };
         }
 
-        template <typename ScanOp = luisa::compute::Callable<Var<Type4Byte>(const Var<Type4Byte>&, const Var<Type4Byte>&)>>
+        template <typename ScanOp>
         void InclusiveScan(SmemTypePtr<Type4Byte>& m_shared_mem,
                            const Var<Type4Byte>&   thread_data,
                            Var<Type4Byte>&         inclusive_output,
@@ -116,7 +117,7 @@ namespace details
         }
 
 
-        template <typename ScanOp = luisa::compute::Callable<Var<Type4Byte>(const Var<Type4Byte>&, const Var<Type4Byte>&)>>
+        template <typename ScanOp>
         Var<Type4Byte> ComputeWarpPrefix(SmemTypePtr<Type4Byte>& m_shared_mem,
                                          ScanOp                  scan_op,
                                          const Var<Type4Byte>&   warp_aggregate,
@@ -129,6 +130,10 @@ namespace details
             $if(lane_id == warp_lane_count() - 1)
             {
                 (*m_shared_mem)[warp_id] = warp_aggregate;
+                device_log("thid:{} - warp_id {}, warp_aggregate {}",
+                           compute::dispatch_id().x,
+                           warp_id,
+                           warp_aggregate);
             };
 
             sync_block();
@@ -149,7 +154,7 @@ namespace details
             return warp_prefix;
         }
 
-        template <typename ScanOp = luisa::compute::Callable<Var<Type4Byte>(const Var<Type4Byte>&, const Var<Type4Byte>&)>>
+        template <typename ScanOp>
         Var<Type4Byte> ComputeWarpPrefix(SmemTypePtr<Type4Byte>& m_shared_mem,
                                          ScanOp                  scan_op,
                                          const Var<Type4Byte>&   warp_aggregate,
@@ -170,7 +175,7 @@ namespace details
             return warp_prefix;
         }
 
-        template <uint WARP_ID, typename ScanOp = luisa::compute::Callable<Var<Type4Byte>(const Var<Type4Byte>&, const Var<Type4Byte>&)>>
+        template <uint WARP_ID, typename ScanOp>
         void ApplyWarpAggregate(SmemTypePtr<Type4Byte>& m_shared_mem,
                                 Var<Type4Byte>&         warp_prefix,
                                 Var<Type4Byte>&         block_aggregate,

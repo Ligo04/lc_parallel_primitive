@@ -2,7 +2,7 @@
  * @Author: Ligo 
  * @Date: 2025-09-28 15:37:17 
  * @Last Modified by: Ligo
- * @Last Modified time: 2025-10-20 14:48:59
+ * @Last Modified time: 2025-10-20 20:40:39
  */
 #pragma once
 #include <luisa/dsl/var.h>
@@ -42,57 +42,87 @@ class BlockScan : public LuisaModule
     ~BlockScan() = default;
 
   public:
-    template <typename ScanOp = luisa::compute::Callable<Var<Type4Byte>(const Var<Type4Byte>&, const Var<Type4Byte>&)>>
+    template <typename ScanOp>
+    void ExclusiveScan(const Var<Type4Byte>& thread_data, Var<Type4Byte>& exclusive_output, ScanOp scan_op)
+    {
+
+        Var<Type4Byte> block_aggregate;
+        ExclusiveScan(m_shared_mem, thread_data, exclusive_output, block_aggregate, scan_op);
+    }
+
+    template <typename ScanOp>
     void ExclusiveScan(const Var<Type4Byte>& thread_data,
-                       Var<Type4Byte>&       output_block_scan,
+                       Var<Type4Byte>&       exclusive_output,
+                       Var<Type4Byte>&       block_aggregate,
+                       ScanOp                scan_op)
+    {
+        $if(DEFALUTE_ALGORITHNM == BlockScanAlgorithm::WARP_SHUFFLE)
+        {
+            details::BlockScanShfl<Type4Byte, BLOCK_SIZE, WARP_SIZE>().ExclusiveScan(
+                m_shared_mem, thread_data, exclusive_output, block_aggregate, scan_op);
+        }
+        $elif(DEFALUTE_ALGORITHNM == BlockScanAlgorithm::SHARED_MEMORY){};
+    }
+
+    template <typename ScanOp>
+    void ExclusiveScan(const Var<Type4Byte>& thread_data,
+                       Var<Type4Byte>&       exclusive_output,
+                       ScanOp                scan_op,
+                       const Var<Type4Byte>& initial_value)
+    {
+
+        Var<Type4Byte> block_aggregate;
+        ExclusiveScan(m_shared_mem, thread_data, exclusive_output, block_aggregate, scan_op, initial_value);
+    }
+
+    template <typename ScanOp>
+    void ExclusiveScan(const Var<Type4Byte>& thread_data,
+                       Var<Type4Byte>&       exclusive_output,
                        Var<Type4Byte>&       block_aggregate,
                        ScanOp                scan_op,
-                       Var<Type4Byte>        initial_value = Type4Byte(0))
+                       Var<Type4Byte>        initial_value)
     {
 
-        using namespace luisa::compute;
-        luisa::compute::set_block_size(BLOCK_SIZE);
         $if(DEFALUTE_ALGORITHNM == BlockScanAlgorithm::WARP_SHUFFLE)
         {
             details::BlockScanShfl<Type4Byte, BLOCK_SIZE, WARP_SIZE>().ExclusiveScan(
-                m_shared_mem, thread_data, output_block_scan, block_aggregate, scan_op, initial_value);
-        }
-        $elif(DEFALUTE_ALGORITHNM == BlockScanAlgorithm::SHARED_MEMORY){};
-    }
-
-    template <typename ScanOp = luisa::compute::Callable<Var<Type4Byte>(const Var<Type4Byte>&, const Var<Type4Byte>&)>>
-    void ExclusiveScan(const Var<Type4Byte>& thread_data,
-                       Var<Type4Byte>&       output_block_scan,
-                       ScanOp                scan_op,
-                       Var<Type4Byte>        initial_value = Type4Byte(0))
-    {
-        using namespace luisa::compute;
-        luisa::compute::set_block_size(BLOCK_SIZE);
-        $if(DEFALUTE_ALGORITHNM == BlockScanAlgorithm::WARP_SHUFFLE)
-        {
-            Var<Type4Byte> block_aggregate;
-            details::BlockScanShfl<Type4Byte, BLOCK_SIZE, WARP_SIZE>().ExclusiveScan(
-                m_shared_mem, thread_data, output_block_scan, block_aggregate, scan_op, initial_value);
+                m_shared_mem, thread_data, exclusive_output, block_aggregate, scan_op, initial_value);
         }
         $elif(DEFALUTE_ALGORITHNM == BlockScanAlgorithm::SHARED_MEMORY){};
     }
 
 
-    template <typename ScanOp = luisa::compute::Callable<Var<Type4Byte>(const Var<Type4Byte>&, const Var<Type4Byte>&)>>
+    template <typename ScanOp>
     void ExclusiveScan(const compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& thread_datas,
                        compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& output_block_sums,
-                       ScanOp         op,
-                       Var<Type4Byte> initial_value = Type4Byte(0))
+                       ScanOp scan_op)
     {
-        using namespace luisa::compute;
-        luisa::compute::set_block_size(BLOCK_SIZE);
+        Var<Type4Byte> block_aggregate;
+        ExclusiveScan(thread_datas, output_block_sums, block_aggregate, scan_op);
+    }
 
+    template <typename ScanOp>
+    void ExclusiveScan(const compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& thread_datas,
+                       compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& output_block_sums,
+                       ScanOp         scan_op,
+                       Var<Type4Byte> initial_value)
+    {
+        Var<Type4Byte> block_aggregate;
+        ExclusiveScan(thread_datas, output_block_sums, block_aggregate, scan_op, initial_value);
+    }
+
+
+    template <typename ScanOp>
+    void ExclusiveScan(const compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& thread_datas,
+                       compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& output_block_sums,
+                       Var<Type4Byte>& block_aggregate,
+                       ScanOp          op)
+    {
         $if(DEFALUTE_ALGORITHNM == BlockScanAlgorithm::WARP_SHUFFLE)
         {
-            Var<Type4Byte> block_aggregate;
             $if(ITEMS_PER_THREAD == 1)
             {
-                ExclusiveScan(thread_datas[0], output_block_sums[0], block_aggregate, op, initial_value);
+                ExclusiveScan(thread_datas[0], output_block_sums[0], block_aggregate, op);
             }
             $else
             {
@@ -100,7 +130,7 @@ class BlockScan : public LuisaModule
                     ThreadReduce<Type4Byte>().Reduce<ITEMS_PER_THREAD>(thread_datas, op);
 
                 Var<Type4Byte> thread_output;
-                ExclusiveScan(thread_aggregate, thread_output, op, initial_value);
+                ExclusiveScan(thread_aggregate, thread_output, block_aggregate, op);
 
                 ThreadScan<Type4Byte, ITEMS_PER_THREAD>().ThreadScanExclusive(
                     thread_datas, output_block_sums, op, thread_output);
@@ -108,16 +138,13 @@ class BlockScan : public LuisaModule
         };
     }
 
-    template <typename ScanOp = luisa::compute::Callable<Var<Type4Byte>(const Var<Type4Byte>&, const Var<Type4Byte>&)>>
+    template <typename ScanOp>
     void ExclusiveScan(const compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& thread_datas,
                        compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& output_block_sums,
                        Var<Type4Byte>& block_aggregate,
                        ScanOp          op,
-                       Var<Type4Byte>  initial_value = Type4Byte(0))
+                       Var<Type4Byte>  initial_value)
     {
-        using namespace luisa::compute;
-        luisa::compute::set_block_size(BLOCK_SIZE);
-
         $if(DEFALUTE_ALGORITHNM == BlockScanAlgorithm::WARP_SHUFFLE)
         {
             $if(ITEMS_PER_THREAD == 1)
@@ -136,88 +163,78 @@ class BlockScan : public LuisaModule
                     thread_datas, output_block_sums, op, thread_output);
             };
         };
-    }  // namespace luisa::parallel_primitive
-
-    template <typename ScanOp = luisa::compute::Callable<Var<Type4Byte>(const Var<Type4Byte>&, const Var<Type4Byte>&)>>
-    void InclusiveScan(const Var<Type4Byte>& thread_data,
-                       Var<Type4Byte>&       output_block_sum,
-                       ScanOp                scan_op,
-                       Var<Type4Byte>        initial_value = Type4Byte(0))
-    {
-        using namespace luisa::compute;
-        luisa::compute::set_block_size(BLOCK_SIZE);
-        $if(DEFALUTE_ALGORITHNM == BlockScanAlgorithm::WARP_SHUFFLE)
-        {
-            Var<Type4Byte> block_aggregate;
-            details::BlockScanShfl<Type4Byte, BLOCK_SIZE, WARP_SIZE>().InclusiveScan(
-                m_shared_mem, thread_data, output_block_sum, block_aggregate, scan_op, initial_value);
-        }
-        $elif(DEFALUTE_ALGORITHNM == BlockScanAlgorithm::SHARED_MEMORY){};
     }
 
-    template <typename ScanOp = luisa::compute::Callable<Var<Type4Byte>(const Var<Type4Byte>&, const Var<Type4Byte>&)>>
+    template <typename ScanOp>
+    void InclusiveScan(const Var<Type4Byte>& thread_data, Var<Type4Byte>& inclusive_out, ScanOp scan_op)
+    {
+        Var<Type4Byte> block_aggregate;
+        InclusiveScan(m_shared_mem, thread_data, inclusive_out, block_aggregate, scan_op);
+    }
+
+    template <typename ScanOp>
     void InclusiveScan(const Var<Type4Byte>& thread_data,
-                       Var<Type4Byte>&       output_block_sum,
+                       Var<Type4Byte>&       inclusive_out,
                        Var<Type4Byte>&       block_aggregate,
-                       ScanOp                scan_op,
-                       Var<Type4Byte>        initial_value = Type4Byte(0))
+                       ScanOp                scan_op)
     {
-        using namespace luisa::compute;
-        luisa::compute::set_block_size(BLOCK_SIZE);
         $if(DEFALUTE_ALGORITHNM == BlockScanAlgorithm::WARP_SHUFFLE)
         {
             details::BlockScanShfl<Type4Byte, BLOCK_SIZE, WARP_SIZE>().InclusiveScan(
-                m_shared_mem, thread_data, output_block_sum, block_aggregate, scan_op, initial_value);
+                m_shared_mem, thread_data, inclusive_out, block_aggregate, scan_op);
         }
         $elif(DEFALUTE_ALGORITHNM == BlockScanAlgorithm::SHARED_MEMORY){};
     }
 
 
-    template <typename ScanOp = luisa::compute::Callable<Var<Type4Byte>(const Var<Type4Byte>&, const Var<Type4Byte>&)>>
+    template <typename ScanOp>
     void InclusiveScan(const compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& thread_datas,
                        compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& inclusive_out,
-                       ScanOp         op,
-                       Var<Type4Byte> initial_value = Type4Byte(0))
+                       ScanOp scan_op)
     {
-        using namespace luisa::compute;
-        luisa::compute::set_block_size(BLOCK_SIZE);
+        Var<Type4Byte> block_aggregate;
+        InclusiveScan(thread_datas, inclusive_out, block_aggregate, scan_op);
+    }
 
+    template <typename ScanOp>
+    void InclusiveScan(const compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& thread_datas,
+                       compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& inclusive_out,
+                       Var<Type4Byte>& block_aggregate,
+                       ScanOp          scan_op)
+    {
         $if(DEFALUTE_ALGORITHNM == BlockScanAlgorithm::WARP_SHUFFLE)
         {
-            Var<Type4Byte> block_aggregate;
             $if(ITEMS_PER_THREAD == 1)
             {
-                ExclusiveScan(thread_datas[0], inclusive_out[0], block_aggregate, op, initial_value);
+                InclusiveScan(thread_datas[0], inclusive_out[0], block_aggregate, scan_op);
             }
             $else
             {
                 Var<Type4Byte> thread_aggregate =
-                    ThreadReduce<Type4Byte>().Reduce<ITEMS_PER_THREAD>(thread_datas, op);
+                    ThreadReduce<Type4Byte>().Reduce<ITEMS_PER_THREAD>(thread_datas, scan_op);
 
                 Var<Type4Byte> thread_output;
-                ExclusiveScan(thread_aggregate, thread_output, block_aggregate, op, initial_value);
+                InclusiveScan(thread_aggregate, thread_output, block_aggregate, scan_op);
 
                 ThreadScan<Type4Byte, ITEMS_PER_THREAD>().ThreadScanInclusive(
-                    thread_datas, inclusive_out, op, thread_output);
+                    thread_datas, inclusive_out, scan_op, thread_output);
             };
         };
     }
 
-    template <typename ScanOp = luisa::compute::Callable<Var<Type4Byte>(const Var<Type4Byte>&, const Var<Type4Byte>&)>>
+
+    template <typename ScanOp>
     void InclusiveScan(const compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& thread_datas,
                        compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& output_block_sums,
                        Var<Type4Byte>& block_aggregate,
                        ScanOp          op,
-                       Var<Type4Byte>  initial_value = Type4Byte(0))
+                       Var<Type4Byte>  initial_value)
     {
-        using namespace luisa::compute;
-        luisa::compute::set_block_size(BLOCK_SIZE);
-
         $if(DEFALUTE_ALGORITHNM == BlockScanAlgorithm::WARP_SHUFFLE)
         {
             $if(ITEMS_PER_THREAD == 1)
             {
-                ExclusiveScan(thread_datas[0], output_block_sums[0], block_aggregate, op, initial_value);
+                InclusiveScan(thread_datas[0], output_block_sums[0], block_aggregate, op, initial_value);
             }
             $else
             {
@@ -225,7 +242,7 @@ class BlockScan : public LuisaModule
                     ThreadReduce<Type4Byte>().Reduce<ITEMS_PER_THREAD>(thread_datas, op);
 
                 Var<Type4Byte> thread_output;
-                ExclusiveScan(thread_aggregate, thread_output, block_aggregate, op, initial_value);
+                InclusiveScan(thread_aggregate, thread_output, block_aggregate, op, initial_value);
 
                 ThreadScan<Type4Byte, ITEMS_PER_THREAD>().ThreadScanInclusive(
                     thread_datas, output_block_sums, op, thread_output);

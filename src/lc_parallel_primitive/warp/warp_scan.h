@@ -2,7 +2,7 @@
  * @Author: Ligo 
  * @Date: 2025-09-29 11:30:37 
  * @Last Modified by: Ligo
- * @Last Modified time: 2025-10-20 14:55:53
+ * @Last Modified time: 2025-10-20 18:27:04
  */
 #pragma once
 
@@ -19,7 +19,7 @@ enum class WarpScanAlgorithm
     WARP_SHUFFLE       = 0,
     WARP_SHARED_MEMORY = 1
 };
-template <NumericT Type4Byte, size_t WARP_SIZE = 32, WarpScanAlgorithm WarpScanMethod = WarpScanAlgorithm::WARP_SHUFFLE>
+template <typename Type4Byte, size_t WARP_SIZE = 32, WarpScanAlgorithm WarpScanMethod = WarpScanAlgorithm::WARP_SHUFFLE>
 class WarpScan : public LuisaModule
 {
   public:

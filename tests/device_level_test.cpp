@@ -34,7 +34,7 @@ int main(int argc, char* argv[])
     DeviceReduce reducer;
     reducer.create(device);
 
-    constexpr int32_t array_size = 256;
+    constexpr int32_t array_size = 512;
 
     auto               in_buffer  = device.create_buffer<int32>(array_size);
     auto               out_buffer = device.create_buffer<int32>(1);

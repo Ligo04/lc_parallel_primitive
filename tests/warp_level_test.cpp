@@ -34,7 +34,7 @@ int main(int argc, char* argv[])
 
 
     constexpr size_t WARP_SIZE  = 32;
-    constexpr size_t array_size = 256;
+    constexpr size_t array_size = 512;
     constexpr size_t BLOCK_SIZE = 256;
 
     auto in_buffer = device.create_buffer<int32>(array_size);

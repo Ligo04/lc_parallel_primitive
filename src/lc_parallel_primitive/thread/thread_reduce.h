@@ -2,7 +2,7 @@
  * @Author: Ligo 
  * @Date: 2025-09-22 10:51:36 
  * @Last Modified by: Ligo
- * @Last Modified time: 2025-10-16 11:19:28
+ * @Last Modified time: 2025-10-20 18:17:32
  */
 
 #pragma once
@@ -25,8 +25,7 @@ class ThreadReduce : public LuisaModule
     ~ThreadReduce() = default;
 
   public:
-    template <size_t ITEMS_PER_THREAD = 1,
-              typename ReduceOp = luisa::compute::Callable<Var<Type4Byte>(const Var<Type4Byte>&, const Var<Type4Byte>&)>>
+    template <size_t ITEMS_PER_THREAD = 1, typename ReduceOp>
     Var<Type4Byte> Reduce(const compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& input, ReduceOp op)
     {
         Var<Type4Byte> result = input[0];
@@ -37,8 +36,7 @@ class ThreadReduce : public LuisaModule
         return result;
     };
 
-    template <size_t ITEMS_PER_THREAD = 1,
-              typename ReduceOp = luisa::compute::Callable<Var<Type4Byte>(const Var<Type4Byte>&, const Var<Type4Byte>&)>>
+    template <size_t ITEMS_PER_THREAD = 1, typename ReduceOp>
     Var<Type4Byte> Reduce(const compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& input,
                           ReduceOp  op,
                           Type4Byte prefix)

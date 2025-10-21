@@ -6,6 +6,8 @@
  * @date 2023-06-25
  */
 
+#include "luisa/dsl/builtin.h"
+#include "luisa/dsl/var.h"
 #include <luisa/luisa-compute.h>
 
 namespace luisa::parallel_primitive
@@ -88,6 +90,12 @@ static void get_temp_size_scan(size_t& temp_storage_size,
         num_elements = num_blocks;
     } while(num_elements > 1);
     temp_storage_size += 1;
+}
+
+
+static inline auto bit_log2(compute::UInt x)
+{
+    return 31 - compute::clz(x);
 }
 
 class LuisaModule : public vstd::IOperatorNewBase

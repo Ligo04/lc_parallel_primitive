@@ -2,7 +2,7 @@
  * @Author: Ligo 
  * @Date: 2025-09-19 14:24:07 
  * @Last Modified by: Ligo
- * @Last Modified time: 2025-10-20 14:59:01
+ * @Last Modified time: 2025-10-20 17:58:43
  */
 
 #pragma once
@@ -24,12 +24,14 @@
 #include <lc_parallel_primitive/runtime/core.h>
 #include <lc_parallel_primitive/common/type_trait.h>
 #include <lc_parallel_primitive/common/keyvaluepair.h>
+#include <lc_parallel_primitive/common/thread_operators.h>
 #include <lc_parallel_primitive/block/block_reduce.h>
 #include <lc_parallel_primitive/block/block_scan.h>
 #include <lc_parallel_primitive/block/block_load.h>
 #include <lc_parallel_primitive/block/block_store.h>
 #include <lc_parallel_primitive/block/block_discontinuity.h>
 #include <lc_parallel_primitive/warp/warp_reduce.h>
+
 #include <typeindex>
 #include <vector>
 namespace luisa::parallel_primitive
@@ -553,113 +555,6 @@ class DeviceReduce : public LuisaModule
     {
         const size_t shared_mem_size = m_shared_mem_size;
 
-        // auto segment_reduce_op = [&](SmemTypePtr<int>&       s_flags,
-        //                              SmemTypePtr<ValueType>& s_reduced_values,
-        //                              SmemTypePtr<int>&       s_segment_ids,
-        //                              UInt                    num_item) noexcept
-        // {
-        //     Int thid = Int(thread_id().x);
-        //     UInt block_start = block_id().x * block_size_x() * UInt(ITEMS_PER_THREAD);
-
-        //     // block-level inclusive scan(ids)
-        //     ArrayVar<int, ITEMS_PER_THREAD> local_flags;
-        //     $for(i, 0u, UInt(ITEMS_PER_THREAD))
-        //     {
-        //         local_flags[i] = (*s_segment_ids)[thid * UInt(ITEMS_PER_THREAD) + i];
-        //     };
-        //     // BlockLoad<int, BLOCK_SIZE, ITEMS_PER_THREAD>().Load(s_segment_ids, local_flags);
-        //     ArrayVar<int, ITEMS_PER_THREAD> output_segment_ids;
-        //     BlockScan<int, BLOCK_SIZE, ITEMS_PER_THREAD>().ExclusiveSum(local_flags, output_segment_ids);
-        //     $for(i, 0u, UInt(ITEMS_PER_THREAD))
-        //     {
-        //         UInt shared_idx = thid * UInt(ITEMS_PER_THREAD) + i;
-        //         (*s_segment_ids)[shared_idx] = output_segment_ids[i];
-        //     };
-        //     sync_block();
-
-        //     // segment reduce
-        //     Local<uint> segment_starts{ITEMS_PER_THREAD};
-        //     Local<uint> segment_ends{ITEMS_PER_THREAD};
-
-        //     $for(i, 0u, UInt(ITEMS_PER_THREAD))
-        //     {
-        //         UInt shared_idx = thid * UInt(ITEMS_PER_THREAD) + i;
-        //         UInt global_idx = block_start + shared_idx;
-
-        //         $if(global_idx < num_item)
-        //         {
-        //             Int segment_id = (*s_segment_ids)[shared_idx];
-        //             // find the start of the segment
-        //             UInt start = shared_idx;
-        //             UInt j     = UInt(shared_idx);
-        //             $while(j > 0u)
-        //             {
-        //                 $if((*s_segment_ids)[j] == segment_id)
-        //                 {
-        //                     start = j;
-        //                 }
-        //                 $else
-        //                 {
-        //                     $break;
-        //                 };
-        //                 j = j - 1u;
-        //             };
-        //             segment_starts[i] = start;
-
-        //             // find the end of the segment
-        //             UInt end = shared_idx + 1u;
-        //             j        = UInt(shared_idx + 1u);
-        //             $while(j < block_size_x() * UInt(ITEMS_PER_THREAD))
-        //             {
-        //                 $if(j < num_item & (*s_segment_ids)[j] == segment_id)
-        //                 {
-        //                     end = j + 1u;
-        //                 }
-        //                 $else
-        //                 {
-        //                     $break;
-        //                 };
-        //                 j = j + 1u;
-        //             };
-        //             segment_ends[i] = end;
-        //         };
-        //     };
-        //     sync_block();
-
-        //     $for(step, 0u, 10u)
-        //     {
-        //         Int stride = 1 << step;
-
-        //         $for(i, 0u, UInt(ITEMS_PER_THREAD))
-        //         {
-        //             UInt shared_idx = thid * UInt(ITEMS_PER_THREAD) + i;
-        //             UInt global_idx = block_start + shared_idx;
-
-        //             $if(global_idx < num_item)
-        //             {
-        //                 Int  segment_id = (*s_segment_ids)[shared_idx];
-        //                 UInt start      = segment_starts[i];
-        //                 UInt end        = segment_ends[i];
-
-        //                 UInt rel_idx    = shared_idx - start;
-        //                 Int  in_segment = rel_idx & (2 * stride - 1);
-        //                 $if(in_segment == 0)
-        //                 {
-        //                     UInt parent_idx = shared_idx + stride;
-        //                     $if(parent_idx < end & parent_idx < block_size_x() * UInt(ITEMS_PER_THREAD)
-        //                         & (*s_segment_ids)[parent_idx] == segment_id)
-        //                     {
-        //                         // in the same segment
-        //                         (*s_reduced_values)[shared_idx] +=
-        //                             reduce_op((*s_reduced_values)[shared_idx],
-        //                                       (*s_reduced_values)[parent_idx]);
-        //                     };
-        //                 };
-        //             };
-        //         };
-        //         sync_block();
-        //     };
-        // };
 
         luisa::unique_ptr<ReduceByKeyShaderT<KeyType, ValueType>> ms_reduce_by_key_shader =
             nullptr;
@@ -708,16 +603,15 @@ class DeviceReduce : public LuisaModule
                 Var<KeyType> tile_predecessor;
                 $if(thid == 0)
                 {
-                    $if(block_id().x == 0)
+                    $if(tile_id == 0)
                     {
-                        tile_predecessor = local_keys[0];
+                        tile_predecessor = -1;
                     }
                     $else
                     {
                         tile_predecessor = keys_in.read(tile_start - 1);
                     };
                 };
-                sync_block();
 
                 BlockDiscontinuity<KeyType, BLOCK_SIZE, ITEMS_PER_THREAD>().FlagHeads(
                     local_flags,
@@ -726,37 +620,25 @@ class DeviceReduce : public LuisaModule
                     { return a != b; },
                     tile_predecessor);
 
+                $if(thid == 0 & tile_id == 0)
+                {
+                    local_flags[0] = 0;
+                };
+
                 ArrayVar<KeyValuePair<int, ValueType>, ITEMS_PER_THREAD> scan_items;
                 $for(item, 0u, UInt(ITEMS_PER_THREAD))
                 {
                     scan_items[item] = {local_flags[item], local_values[item]};
                 };
 
-
-                auto reduce_seg_by_key_op =
-                    [&](const Var<KeyValuePair<int, ValueType>>& a,
-                        const Var<KeyValuePair<int, ValueType>>& b)
-                {
-                    Var<KeyValuePair<int, ValueType>> result;
-                    result.key = a.key + b.key;
-                    $if(b.key == 1)
-                    {
-                        result.value = b.value;
-                    }
-                    $else
-                    {
-                        auto v2      = b.value;
-                        result.value = reduce_op(a.value, v2);
-                    };
-                    return result;
-                };
-
                 ArrayVar<KeyValuePair<int, ValueType>, ITEMS_PER_THREAD> scan_output;
-                Var<KeyValuePair<int, ValueType>> initial{0, 0};
                 Var<KeyValuePair<int, ValueType>> block_aggregate{0, 0};
 
                 BlockScan<KeyValuePair<int, ValueType>, BLOCK_SIZE, ITEMS_PER_THREAD>()
-                    .ExclusiveScan(scan_items, scan_output, block_aggregate, reduce_seg_by_key_op, initial);
+                    .ExclusiveScan(scan_items,
+                                   scan_output,
+                                   block_aggregate,
+                                   ReduceBySegmentOp<ReduceOp>());
 
                 device_log("thid {},key {},value {},flags {}, scan_output_key {}, scan_output_value {}, block_aggregate key {}, value {}",
                            block_id().x * block_size().x * UInt(ITEMS_PER_THREAD) + thid,

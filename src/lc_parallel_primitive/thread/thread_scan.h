@@ -2,7 +2,7 @@
  * @Author: Ligo 
  * @Date: 2025-10-16 10:59:45 
  * @Last Modified by: Ligo
- * @Last Modified time: 2025-10-20 14:44:23
+ * @Last Modified time: 2025-10-20 18:17:24
  */
 
 
@@ -22,7 +22,7 @@ class ThreadScan : public LuisaModule
     ThreadScan()  = default;
     ~ThreadScan() = default;
 
-    template <typename ScanOp = luisa::compute::Callable<Var<Type4Byte>(const Var<Type4Byte>&, const Var<Type4Byte>&)>>
+    template <typename ScanOp>
     Var<Type4Byte> ThreadScanExclusive(const compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& input,
                                        compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& output,
                                        ScanOp         scan_op,
@@ -43,7 +43,7 @@ class ThreadScan : public LuisaModule
     };
 
 
-    template <typename ScanOp = luisa::compute::Callable<Var<Type4Byte>(const Var<Type4Byte>&, const Var<Type4Byte>&)>>
+    template <typename ScanOp>
     Var<Type4Byte> ThreadScanExclusivePartial(
         const compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& input,
         compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>&       output,
@@ -65,7 +65,7 @@ class ThreadScan : public LuisaModule
         return ThreadScanExclusive(input, output, inclusive, exclusive, scan_op, 1u);
     };
 
-    template <typename ScanOp = luisa::compute::Callable<Var<Type4Byte>(const Var<Type4Byte>&, const Var<Type4Byte>&)>>
+    template <typename ScanOp>
     Var<Type4Byte> ThreadScanInclusive(const compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& input,
                                        compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& output,
                                        ScanOp         scan_op,
@@ -83,7 +83,7 @@ class ThreadScan : public LuisaModule
     };
 
   private:
-    template <typename ScanOp = luisa::compute::Callable<Var<Type4Byte>(const Var<Type4Byte>&, const Var<Type4Byte>&)>>
+    template <typename ScanOp>
     Var<Type4Byte> ThreadScanExclusive(const compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& input,
                                        compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& output,
                                        Var<Type4Byte> inclusive,
@@ -102,7 +102,7 @@ class ThreadScan : public LuisaModule
         return inclusive;
     };
 
-    template <typename ScanOp = luisa::compute::Callable<Var<Type4Byte>(const Var<Type4Byte>&, const Var<Type4Byte>&)>>
+    template <typename ScanOp>
     Var<Type4Byte> ThreadScanExclusivePartial(
         const compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& input,
         compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>&       output,
@@ -126,7 +126,7 @@ class ThreadScan : public LuisaModule
         return inclusive;
     };
 
-    template <typename ScanOp = luisa::compute::Callable<Var<Type4Byte>(const Var<Type4Byte>&, const Var<Type4Byte>&)>>
+    template <typename ScanOp>
     Var<Type4Byte> ThreadScanInclusive(const compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& input,
                                        compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& output,
                                        Var<Type4Byte> inclusive,
