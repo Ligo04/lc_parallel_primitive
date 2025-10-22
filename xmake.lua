@@ -9,9 +9,9 @@ includes("xmake/package.lua")
 
 add_requires("luisa-compute", {configs = {cuda = true}})
 
-target("lc_parallel_primitive")
+target("lcpp")
     set_kind("headeronly")
-    add_headerfiles("src/(lc_parallel_primitive/**.h)", {public = true})
+    add_headerfiles("src/(lcpp/**.h)", {public = true})
     add_includedirs("src/", {public = true})
     add_packages("luisa-compute", {public = true})
 target_end()

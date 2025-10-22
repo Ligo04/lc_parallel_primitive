@@ -1,15 +1,15 @@
 
-#include "lc_parallel_primitive/block/block_load.h"
-#include "lc_parallel_primitive/block/block_reduce.h"
-#include "lc_parallel_primitive/block/block_scan.h"
-#include "lc_parallel_primitive/block/block_store.h"
-#include "lc_parallel_primitive/runtime/core.h"
+#include "lcpp/block/block_load.h"
+#include "lcpp/block/block_reduce.h"
+#include "lcpp/block/block_scan.h"
+#include "lcpp/block/block_store.h"
+#include "lcpp/runtime/core.h"
 #include "luisa/core/logging.h"
 #include "luisa/dsl/builtin.h"
 #include "luisa/dsl/var.h"
 #include "luisa/runtime/shader.h"
 #include <cstddef>
-#include <lc_parallel_primitive/parallel_primitive.h>
+#include <lcpp/parallel_primitive.h>
 #include <boost/ut.hpp>
 #include <numeric>
 using namespace luisa;

@@ -1,16 +1,16 @@
 
-#include "lc_parallel_primitive/block/block_reduce.h"
-#include "lc_parallel_primitive/block/block_scan.h"
-#include "lc_parallel_primitive/runtime/core.h"
-#include "lc_parallel_primitive/warp/warp_reduce.h"
-#include "lc_parallel_primitive/warp/warp_scan.h"
+#include "lcpp/block/block_reduce.h"
+#include "lcpp/block/block_scan.h"
+#include "lcpp/runtime/core.h"
+#include "lcpp/warp/warp_reduce.h"
+#include "lcpp/warp/warp_scan.h"
 #include "luisa/core/logging.h"
 #include "luisa/dsl/builtin.h"
 #include "luisa/dsl/stmt.h"
 #include "luisa/dsl/var.h"
 #include "luisa/runtime/shader.h"
 #include <cstddef>
-#include <lc_parallel_primitive/parallel_primitive.h>
+#include <lcpp/parallel_primitive.h>
 #include <boost/ut.hpp>
 #include <numeric>
 #include <vector>

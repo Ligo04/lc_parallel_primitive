@@ -10,7 +10,7 @@
 #include <luisa/vstl/config.h>
 #include <algorithm>
 #include <cstdint>
-#include <lc_parallel_primitive/parallel_primitive.h>
+#include <lcpp/parallel_primitive.h>
 #include <random>
 #include <vector>
 #include <boost/ut.hpp>
@@ -31,11 +31,15 @@ int main(int argc, char* argv[])
     Device device = context.create_device("metal");
 #endif
 
-    DeviceReduce reducer;
+
+    constexpr int32_t array_size       = 512;
+    constexpr int32_t BLOCK_SIZE       = 256;
+    constexpr int32_t ITEMS_PER_THREAD = 2;
+    constexpr int32_t WARP_NUMS        = 32;
+
+
+    DeviceReduce<BLOCK_SIZE, ITEMS_PER_THREAD, WARP_NUMS> reducer;
     reducer.create(device);
-
-    constexpr int32_t array_size = 256;
-
     auto               in_buffer  = device.create_buffer<int32>(array_size);
     auto               out_buffer = device.create_buffer<int32>(1);
     std::vector<int32> result(1);
@@ -145,7 +149,7 @@ int main(int argc, char* argv[])
     auto key_buffer   = device.create_buffer<int32>(array_size);
     auto value_buffer = device.create_buffer<int32>(array_size);
 
-    constexpr int items_per_segment = 100;
+    constexpr int items_per_segment = 2;
     const int segments = (array_size + items_per_segment - 1) / items_per_segment;  // 向上取整
 
     std::vector<int32> input_keys(array_size);

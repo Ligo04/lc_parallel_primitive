@@ -5,7 +5,7 @@ local function add_test_target(file_name)
     target(file_name)
         set_kind("binary")
         add_files(file_name..".cpp")
-        add_deps("lc_parallel_primitive")
+        add_deps("lcpp")
         add_packages("boost_ut","luisa-compute","cpptrace")
         -- add run path for luisa-compute
         if is_os("mac") then

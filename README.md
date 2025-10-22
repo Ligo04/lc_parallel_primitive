@@ -1,2 +1,2 @@
-# lc_parallel_primitive
+# lcpp
 parallel primitive based on luisacompute
