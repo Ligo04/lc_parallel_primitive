@@ -2,7 +2,7 @@
  * @Author: Ligo 
  * @Date: 2025-10-17 15:33:13 
  * @Last Modified by: Ligo
- * @Last Modified time: 2025-10-17 22:53:38
+ * @Last Modified time: 2025-10-22 16:49:59
  */
 
 #pragma once
@@ -25,7 +25,7 @@ namespace details
 
     struct BlockReduceMem
     {
-        template <typename ReduceOp = luisa::compute::Callable<Var<Type4Byte>(const Var<Type4Byte>&, const Var<Type4Byte>&)>>
+        template <typename ReduceOp>
         Var<Type4Byte> Reduce(SmemTypePtr<Type4Byte>& m_shared_mem,
                               const Var<Type4Byte>&   thread_data,
                               ReduceOp                reduce_op,

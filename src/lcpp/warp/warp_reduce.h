@@ -2,7 +2,7 @@
  * @Author: Ligo 
  * @Date: 2025-09-29 10:43:44 
  * @Last Modified by: Ligo
- * @Last Modified time: 2025-10-17 17:51:08
+ * @Last Modified time: 2025-10-22 16:32:49
  */
 
 #pragma once
@@ -28,7 +28,7 @@ class WarpReduce : public LuisaModule
   public:
     WarpReduce()
     {
-        $if(WarpReduceMethod == WarpReduceAlgorithm::WARP_SHARED_MEMORY)
+        if(WarpReduceMethod == WarpReduceAlgorithm::WARP_SHARED_MEMORY)
         {
             m_shared_mem = new SmemType<Type4Byte>{WARP_SIZE};
         };
@@ -47,7 +47,7 @@ class WarpReduce : public LuisaModule
     {
         compute::set_warp_size(WARP_SIZE);
         Var<Type4Byte> result;
-        $if(WarpReduceMethod == WarpReduceAlgorithm::WARP_SHUFFLE)
+        if(WarpReduceMethod == WarpReduceAlgorithm::WARP_SHUFFLE)
         {
             result = details::WarpReduceShfl<Type4Byte, WARP_SIZE>().Reduce(d_in, op, valid_item);
         };

@@ -2,7 +2,7 @@
  * @Author: Ligo 
  * @Date: 2025-10-14 14:01:20 
  * @Last Modified by: Ligo
- * @Last Modified time: 2025-10-20 14:37:10
+ * @Last Modified time: 2025-10-22 23:53:31
  */
 #pragma once
 
@@ -62,7 +62,7 @@ class BlockLoad : public LuisaModule
         luisa::compute::set_block_size(BlockSize);
         UInt thid = thread_id().x;
 
-        $if(DefaultLoadAlgorithm == BlockLoadAlgorithm::BLOCK_LOAD_DIRECT)
+        if(DefaultLoadAlgorithm == BlockLoadAlgorithm::BLOCK_LOAD_DIRECT)
         {
             LoadDirectedBlocked(thid * UInt(ITEMS_PER_THREAD),
                                 d_in,
@@ -83,7 +83,8 @@ class BlockLoad : public LuisaModule
                              Var<Type4Byte> default_value)
     {
         using namespace luisa::compute;
-        $for(i, 0u, compute::UInt(ITEMS_PER_THREAD))
+        // $for(i, 0u, compute::UInt(ITEMS_PER_THREAD))
+        for(auto i = 0u; i < ITEMS_PER_THREAD; ++i)
         {
             UInt index = linear_tid + i;
             $if(index < block_item_end)

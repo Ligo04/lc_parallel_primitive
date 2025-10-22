@@ -2,7 +2,7 @@
  * @Author: Ligo 
  * @Date: 2025-10-20 16:29:10 
  * @Last Modified by: Ligo
- * @Last Modified time: 2025-10-22 11:33:26
+ * @Last Modified time: 2025-10-22 17:16:51
  */
 
 #pragma once
@@ -10,9 +10,7 @@
 #include <luisa/dsl/func.h>
 #include <luisa/dsl/var.h>
 #include <luisa/dsl/builtin.h>
-#include <lcpp/common/type_trait.h>
 #include <lcpp/common/keyvaluepair.h>
-
 
 namespace luisa::parallel_primitive
 {

@@ -2,7 +2,7 @@
  * @Author: Ligo 
  * @Date: 2025-10-21 23:03:40 
  * @Last Modified by: Ligo
- * @Last Modified time: 2025-10-22 11:32:37
+ * @Last Modified time: 2025-10-22 23:55:23
  */
 
 #pragma once
@@ -11,8 +11,8 @@
 #include <luisa/dsl/func.h>
 #include <luisa/dsl/var.h>
 #include <luisa/dsl/builtin.h>
-#include <lcpp/common/type_trait.h>
 #include <lcpp/common/keyvaluepair.h>
+#include <lcpp/common/utils.h>
 #include <lcpp/runtime/core.h>
 
 namespace luisa::parallel_primitive
@@ -61,7 +61,8 @@ namespace details
                 Int block_id_x  = Int(block_id().x);
                 Int block_dim_x = Int(block_size_x());
 
-                $for(item, 0u, UInt(ITEMS_PER_THREAD))
+                // $for(item, 0u, UInt(ITEMS_PER_THREAD))
+                for(auto item = 0u; item < ITEMS_PER_THREAD; ++item)
                 {
                     Int shared_idx = thread_id_x + item * block_dim_x;  // bank conflict free
                     Int           global_idx = baseIndex + shared_idx;

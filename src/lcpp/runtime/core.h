@@ -6,9 +6,12 @@
  * @date 2023-06-25
  */
 
-#include "luisa/dsl/builtin.h"
-#include "luisa/dsl/var.h"
+#include <cstddef>
 #include <luisa/luisa-compute.h>
+#include <luisa/dsl/builtin.h>
+#include <luisa/dsl/var.h>
+#include <lcpp/common/keyvaluepair.h>
+#include <lcpp/common/type_trait.h>
 
 namespace luisa::parallel_primitive
 {
@@ -37,65 +40,6 @@ inline void lazy_compile(luisa::compute::Device&                device,
     {
         ushader = luisa::make_unique<S>(device.compile<I>(std::forward<F>(func), option));
     }
-}
-
-
-static inline float to_radius(float degree)
-{
-    return degree * 0.0174532925f;
-}
-static inline int imax(int a, int b)
-{
-    return a > b ? a : b;
-}
-static inline bool is_power_of_two(int x)
-{
-    return (x & (x - 1)) == 0;
-}
-static inline float radians(float degree)
-{
-    return degree * 0.017453292519943295769236907684886f;
-}
-static inline int floor_pow_2(int n)
-{
-#ifdef WIN32
-    return 1 << (int)logb((float)n);
-#else
-    int exp;
-    frexp((float)n, &exp);
-    return 1 << (exp - 1);
-#endif
-}
-
-static void get_temp_size_scan(size_t& temp_storage_size,
-                               size_t  m_block_size,
-                               size_t  items_per_thread,
-                               size_t  num_items)
-{
-    auto         block_size       = m_block_size;
-    unsigned int max_num_elements = num_items;
-    temp_storage_size             = 0;
-    unsigned int num_elements     = max_num_elements;  // input segment size
-    int          level            = 0;
-    do
-    {
-        // output segment size
-        unsigned int num_blocks =
-            imax(1, (int)ceil((float)num_elements / (items_per_thread * block_size)));
-        if(num_blocks > 1)
-        {
-            level++;
-            temp_storage_size += num_blocks;
-        }
-        num_elements = num_blocks;
-    } while(num_elements > 1);
-    temp_storage_size += 1;
-}
-
-
-static inline auto bit_log2(compute::UInt x)
-{
-    return 31 - compute::clz(x);
 }
 
 class LuisaModule : public vstd::IOperatorNewBase
@@ -141,11 +85,5 @@ class LuisaModule : public vstd::IOperatorNewBase
 
     using Stream = luisa::compute::Stream;
     using Type   = luisa::compute::Type;
-
-    int                        m_log_mem_banks = 5;
-    inline luisa::compute::Int conflict_free_offset(luisa::compute::Int i)
-    {
-        return i >> m_log_mem_banks;
-    }
 };
 }  // namespace luisa::parallel_primitive

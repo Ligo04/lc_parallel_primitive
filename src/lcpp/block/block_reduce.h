@@ -2,7 +2,7 @@
  * @Author: Ligo 
  * @Date: 2025-09-28 16:54:51 
  * @Last Modified by: Ligo
- * @Last Modified time: 2025-10-20 14:57:06
+ * @Last Modified time: 2025-10-22 17:04:16
  */
 
 #pragma once
@@ -32,11 +32,11 @@ class BlockReduce : public LuisaModule
   public:
     BlockReduce()
     {
-        $if(Algorithm == DefaultBlockReduceAlgorithm::SHARED_MEMORY)
+        if(Algorithm == DefaultBlockReduceAlgorithm::SHARED_MEMORY)
         {
             m_shared_mem = new SmemType<Type4Byte>{BlockSize};
         }
-        $elif(Algorithm == DefaultBlockReduceAlgorithm::WARP_SHUFFLE)
+        else if(Algorithm == DefaultBlockReduceAlgorithm::WARP_SHUFFLE)
         {
             m_shared_mem = new SmemType<Type4Byte>{BlockSize / WARP_SIZE};
         };
@@ -46,31 +46,49 @@ class BlockReduce : public LuisaModule
     ~BlockReduce() = default;
 
   public:
-    template <typename ReduceOp = luisa::compute::Callable<Var<Type4Byte>(const Var<Type4Byte>&, const Var<Type4Byte>&)>>
-    Var<Type4Byte> Reduce(const Var<Type4Byte>& thread_data,
-                          ReduceOp              reduce_op,
-                          compute::UInt         num_item = BlockSize)
+    template <typename ReduceOp>
+    Var<Type4Byte> Reduce(const Var<Type4Byte>& thread_data, ReduceOp reduce_op)
     {
         Var<Type4Byte> result;
-        compute::UInt  valid_item = compute::block_size().x;
-        compute::UInt  block_offset =
-            compute::block_id().x * compute::block_size().x;
-        $if(block_offset + compute::block_size().x < num_item)
+        if(Algorithm == DefaultBlockReduceAlgorithm::WARP_SHUFFLE)
         {
-            valid_item = num_item - block_offset;
-        };
-        $if(Algorithm == DefaultBlockReduceAlgorithm::SHARED_MEMORY)
+            result = details::BlockReduceShfl<Type4Byte, BlockSize>().Reduce<true>(
+                m_shared_mem, thread_data, reduce_op, compute::block_size().x);
+        }
+        return result;
+    };
+
+    template <typename ReduceOp>
+    Var<Type4Byte> Reduce(const Var<Type4Byte>& thread_data, ReduceOp reduce_op, compute::UInt num_item)
+    {
+        Var<Type4Byte> result;
+        if(Algorithm == DefaultBlockReduceAlgorithm::WARP_SHUFFLE)
+        {
+            $if(num_item >= compute::block_size().x)
+            {
+                result = details::BlockReduceShfl<Type4Byte, BlockSize>().Reduce<true>(
+                    m_shared_mem, thread_data, reduce_op, num_item);
+            }
+            $else
+            {
+                result = details::BlockReduceShfl<Type4Byte, BlockSize>().Reduce<false>(
+                    m_shared_mem, thread_data, reduce_op, num_item);
+            };
+        }
+        else if(Algorithm == DefaultBlockReduceAlgorithm::SHARED_MEMORY)
         {
             result = details::BlockReduceMem<Type4Byte, BlockSize>().Reduce(
-                m_shared_mem, thread_data, reduce_op, valid_item);
-        }
-        $elif(Algorithm == DefaultBlockReduceAlgorithm::WARP_SHUFFLE)
-        {
-            result = details::BlockReduceShfl<Type4Byte, BlockSize>().Reduce(
-                m_shared_mem, thread_data, reduce_op, valid_item);
+                m_shared_mem, thread_data, reduce_op, num_item);
         };
         return result;
     };
+
+    Var<Type4Byte> Sum(const Var<Type4Byte>& d_in)
+    {
+        return Reduce(d_in,
+                      [](const Var<Type4Byte>& a, const Var<Type4Byte>& b)
+                      { return a + b; });
+    }
 
     Var<Type4Byte> Sum(const Var<Type4Byte>& d_in, compute::UInt num_item)
     {
@@ -81,9 +99,20 @@ class BlockReduce : public LuisaModule
             num_item);
     }
 
+    Var<Type4Byte> Max(const Var<Type4Byte>& d_in)
+    {
+        return Reduce(d_in, luisa::compute::max);
+    }
+
     Var<Type4Byte> Max(const Var<Type4Byte>& d_in, compute::UInt num_item)
     {
         return Reduce(d_in, luisa::compute::max, num_item);
+    }
+
+
+    Var<Type4Byte> Min(const Var<Type4Byte>& d_in)
+    {
+        return Reduce(d_in, luisa::compute::min);
     }
 
     Var<Type4Byte> Min(const Var<Type4Byte>& d_in, compute::UInt num_item)

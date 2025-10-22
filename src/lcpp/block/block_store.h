@@ -2,7 +2,7 @@
  * @Author: Ligo 
  * @Date: 2025-10-14 16:49:47 
  * @Last Modified by: Ligo
- * @Last Modified time: 2025-10-20 14:48:57
+ * @Last Modified time: 2025-10-22 23:53:54
  */
 
 
@@ -49,7 +49,7 @@ class BlockStore : public LuisaModule
         luisa::compute::set_block_size(BlockSize);
         UInt thid = thread_id().x;
 
-        $if(DefaultStoreAlgorithm == BlockStoreAlgorithm::BLOCK_STORE_DIRECT)
+        if(DefaultStoreAlgorithm == BlockStoreAlgorithm::BLOCK_STORE_DIRECT)
         {
             StoreDirectedBlocked(thid * UInt(ITEMS_PER_THREAD), thread_data, d_out, block_item_start, block_item_end);
         };
@@ -63,7 +63,7 @@ class BlockStore : public LuisaModule
                               compute::UInt block_item_end)
     {
         using namespace luisa::compute;
-        $for(i, 0u, compute::UInt(ITEMS_PER_THREAD))
+        for(auto i = 0u; i < ITEMS_PER_THREAD; ++i)
         {
             UInt index = linear_tid + i;
             $if(index < block_item_end)

@@ -2,7 +2,7 @@
  * @Author: Ligo 
  * @Date: 2025-10-14 14:03:06 
  * @Last Modified by: Ligo
- * @Last Modified time: 2025-10-20 22:35:29
+ * @Last Modified time: 2025-10-22 23:58:51
  */
 
 #pragma once
@@ -64,7 +64,8 @@ class BlockDiscontinuity : public LuisaModule
 
         sync_block();
 
-        $for(i, 0u, compute::UInt(ITEMS_PER_THREAD))
+        // $for(i, 0u, compute::UInt(ITEMS_PER_THREAD))
+        for(auto i = 0u; i < ITEMS_PER_THREAD; ++i)
         {
             $if(i == 0)
             {
@@ -112,7 +113,8 @@ class BlockDiscontinuity : public LuisaModule
 
         sync_block();
 
-        $for(i, 0u, compute::UInt(ITEMS_PER_THREAD))
+        // $for(i, 0u, compute::UInt(ITEMS_PER_THREAD))
+        for(auto i = 0u; i < ITEMS_PER_THREAD; ++i)
         {
             $if(i == 0)
             {
@@ -150,7 +152,7 @@ class BlockDiscontinuity : public LuisaModule
 
         sync_block();
 
-        $for(i, 0u, compute::UInt(ITEMS_PER_THREAD))
+        for(auto i = 0u; i < ITEMS_PER_THREAD; ++i)
         {
             $if(i == compute::UInt(ITEMS_PER_THREAD) - 1)
             {
@@ -187,7 +189,7 @@ class BlockDiscontinuity : public LuisaModule
 
         sync_block();
 
-        $for(i, 0u, compute::UInt(ITEMS_PER_THREAD))
+        for(auto i = 0u; i < ITEMS_PER_THREAD; ++i)
         {
             $if(i == UInt(ITEMS_PER_THREAD) - 1)
             {
@@ -223,7 +225,7 @@ class BlockDiscontinuity : public LuisaModule
 
         sync_block();
 
-        $for(i, 0u, compute::UInt(ITEMS_PER_THREAD))
+        for(auto i = 0u; i < ITEMS_PER_THREAD; ++i)
         {
             $if(i == 0)
             {
@@ -278,7 +280,7 @@ class BlockDiscontinuity : public LuisaModule
 
         sync_block();
 
-        $for(i, 0u, compute::UInt(ITEMS_PER_THREAD))
+        for(auto i = 0u; i < ITEMS_PER_THREAD; ++i)
         {
             // head_flags
             $if(i == 0)

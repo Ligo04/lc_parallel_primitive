@@ -2,14 +2,12 @@
  * @Author: Ligo 
  * @Date: 2025-09-22 10:51:36 
  * @Last Modified by: Ligo
- * @Last Modified time: 2025-10-20 18:17:32
+ * @Last Modified time: 2025-10-22 23:57:19
  */
 
 #pragma once
-
-
-#include <luisa/dsl/var.h>
 #include <cstddef>
+#include <luisa/dsl/var.h>
 #include <lcpp/runtime/core.h>
 #include <lcpp/common/type_trait.h>
 
@@ -19,7 +17,6 @@ namespace luisa::parallel_primitive
 template <typename Type4Byte>
 class ThreadReduce : public LuisaModule
 {
-    // Implementation details for ThrustReduce
   public:
     ThreadReduce()  = default;
     ~ThreadReduce() = default;
@@ -29,7 +26,7 @@ class ThreadReduce : public LuisaModule
     Var<Type4Byte> Reduce(const compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& input, ReduceOp op)
     {
         Var<Type4Byte> result = input[0];
-        $for(i, 1u, compute::UInt(ITEMS_PER_THREAD))
+        for(auto i = 1; i < ITEMS_PER_THREAD; ++i)
         {
             result = op(result, input[i]);
         };
@@ -43,7 +40,7 @@ class ThreadReduce : public LuisaModule
     {
         compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD + 1> temp;
         temp[0] = prefix;
-        $for(i, 0u, compute::UInt(ITEMS_PER_THREAD))
+        for(auto i = 0; i < ITEMS_PER_THREAD; ++i)
         {
             temp[i + 1] = input[i];
         };

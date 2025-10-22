@@ -2,11 +2,10 @@
  * @Author: Ligo 
  * @Date: 2025-10-21 22:12:15 
  * @Last Modified by: Ligo
- * @Last Modified time: 2025-10-22 14:42:28
+ * @Last Modified time: 2025-10-22 23:56:51
  */
 
 #pragma once
-#include "luisa/dsl/stmt.h"
 #include <cstddef>
 #include <luisa/dsl/sugar.h>
 #include <luisa/dsl/func.h>
@@ -82,7 +81,8 @@ namespace details
                 $else
                 {
                     // direct scatter
-                    $for(item, 0u, UInt(ITEMS_PER_THREAD))
+                    // for(item, 0u, UInt(ITEMS_PER_THREAD))
+                    for(auto item = 0u; item < ITEMS_PER_THREAD; ++item)
                     {
                         $if(segment_flags[item] == 1)
                         {
@@ -172,7 +172,7 @@ namespace details
                     };
 
                     ArrayVar<KeyValuePair<int, ValueType>, ITEMS_PER_THREAD> scan_items;
-                    $for(item, 0u, UInt(ITEMS_PER_THREAD))
+                    for(auto item = 0u; item < ITEMS_PER_THREAD; ++item)
                     {
                         scan_items[item] = {local_flags[item], local_values[item]};
                     };
@@ -196,7 +196,7 @@ namespace details
 
                     ArrayVar<KeyValuePair<int, ValueType>, ITEMS_PER_THREAD> scatter_items;
                     ArrayVar<uint, ITEMS_PER_THREAD> scatter_indices;
-                    $for(item, 0u, UInt(ITEMS_PER_THREAD))
+                    for(auto item = 0u; item < ITEMS_PER_THREAD; ++item)
                     {
                         scatter_items[item].key   = local_prev_keys[item];
                         scatter_items[item].value = scan_output[item].value;
