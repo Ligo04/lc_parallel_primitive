@@ -7,7 +7,12 @@
 
 
 #pragma once
+#include "lcpp/runtime/core.h"
+#include "luisa/core/basic_traits.h"
+#include "luisa/dsl/stmt.h"
+#include <__msvc_iter_core.hpp>
 #include <cmath>
+#include <cstddef>
 #include <luisa/luisa-compute.h>
 #include <luisa/dsl/builtin.h>
 #include <luisa/dsl/var.h>
@@ -80,18 +85,26 @@ luisa::compute::Var<Type4Byte> ShuffleUp(luisa::compute::Var<Type4Byte>& input,
                                          luisa::compute::UInt offset,
                                          luisa::compute::UInt first_lane = 0u)
 {
-    luisa::compute::Var<Type4Byte> result;
-    luisa::compute::Int            src_lane = curr_lane_id - offset;
-    $if(src_lane >= first_lane)
+    luisa::compute::Var<Type4Byte> result =
+        compute::warp_read_lane(input, curr_lane_id - offset);
+
+    $if(compute::Int(curr_lane_id - offset) < compute::Int(first_lane))
     {
-        result = compute::warp_read_lane(input, src_lane);
-        // compute::device_log("thid:{}, src_lane: {}, input: {}, result: {}",
-        //                     compute::dispatch_id().x,
-        //                     src_lane,
-        //                     input,
-        //                     result);
-    }
-    $else
+        result = input;
+    };
+    return result;
+};
+
+
+template <NumericT Type4Byte>
+luisa::compute::Var<Type4Byte> ShuffleDown(luisa::compute::Var<Type4Byte>& input,
+                                           luisa::compute::UInt curr_lane_id,
+                                           luisa::compute::UInt offset,
+                                           luisa::compute::UInt last_lane = 32u)
+{
+    luisa::compute::UInt src_lane = curr_lane_id + offset;
+    luisa::compute::Var<Type4Byte> result = compute::warp_read_lane(input, src_lane);
+    $if(src_lane > last_lane)
     {
         result = input;
     };
@@ -125,4 +138,33 @@ inline luisa::compute::Int conflict_free_offset(luisa::compute::Int i)
 {
     return i >> log_mem_banks;
 }
+
+inline luisa::compute::UInt get_lane_mask_ge(luisa::compute::UInt lane_id,
+                                             luisa::compute::UInt wave_size)
+{
+    return (~((1u << lane_id) - 1u)) & ((1u << wave_size) - 1u);
+}
+
+inline luisa::compute::UInt get_lane_mask_le(luisa::compute::UInt lane_id,
+                                             luisa::compute::UInt wave_size)
+{
+    return (1u << (lane_id + 1)) - 1u;
+}
+
+template <size_t LOGIC_WARP_SIZE>
+inline luisa::compute::uint warp_mask(luisa::compute::uint warp_id)
+{
+    constexpr bool is_pow_of_two = is_power_of_two(LOGIC_WARP_SIZE);
+    constexpr bool is_arch_warp  = (LOGIC_WARP_SIZE == details::WARP_SIZE);
+
+    luisa::compute::uint member_mask = 0xFFFFFFFFu >> (details::WARP_SIZE - LOGIC_WARP_SIZE);
+
+    if constexpr(is_pow_of_two && !is_arch_warp)
+    {
+        member_mask <<= warp_id * LOGIC_WARP_SIZE;
+    };
+
+    return member_mask;
+}
+
 };  // namespace luisa::parallel_primitive

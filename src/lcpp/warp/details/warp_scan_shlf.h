@@ -16,6 +16,7 @@
 #include <lcpp/common/type_trait.h>
 #include <lcpp/common/keyvaluepair.h>
 #include <lcpp/common/utils.h>
+#include <lcpp/runtime/core.h>
 
 namespace luisa::parallel_primitive
 {
@@ -23,7 +24,7 @@ namespace details
 {
     using namespace luisa::compute;
 
-    template <typename Type4Byte, size_t WARP_SIZE = 32>
+    template <typename Type4Byte, size_t LOGIC_WARP_SIZE = details::WARP_SIZE>
     struct WarpScanShfl
     {
         template <typename ScanOp>

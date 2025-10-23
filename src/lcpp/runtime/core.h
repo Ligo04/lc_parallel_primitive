@@ -15,6 +15,12 @@
 
 namespace luisa::parallel_primitive
 {
+namespace details
+{
+    constexpr static size_t WARP_SIZE  = 32;
+    constexpr static size_t BLOCK_SIZE = 256;
+};  // namespace details
+
 
 template <typename T>
 using U = luisa::unique_ptr<T>;

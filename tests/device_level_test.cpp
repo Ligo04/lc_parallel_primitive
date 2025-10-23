@@ -204,7 +204,7 @@ int main(int argc, char* argv[])
             }
             LUISA_INFO("Key: {}, Expected Aggregate: {}", i, expected_sum);
             LUISA_INFO("UniqueKey: {}, AggregateValue: {}", unique_keys[i], aggregates[i]);
-            // expect(expected_sum == aggregates[i]);
+            expect(expected_sum == aggregates[i]);
         }
     };
 
