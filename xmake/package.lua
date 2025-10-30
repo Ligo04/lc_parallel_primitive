@@ -53,7 +53,7 @@ package("luisa-compute")
             package:add("defines", "LUISA_USE_SYSTEM_GLFW=1")
         end
         if package:config("cuda") then
-            package:add("deps", "cuda")
+            package:add("deps", "cuda", "volk")
         end
         if package:config("vulkan") then
             package:add("deps", "vulkansdk", "volk")

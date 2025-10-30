@@ -26,7 +26,7 @@ int main(int argc, char* argv[])
 
     Context context{argv[1]};
 #ifdef _WIN32
-    Device device = context.create_device("cuda");
+    Device device = context.create_device("dx");
 #elif __APPLE__
     Device device = context.create_device("metal");
 #endif
@@ -40,11 +40,11 @@ int main(int argc, char* argv[])
 
     DeviceReduce<BLOCK_SIZE, ITEMS_PER_THREAD, WARP_NUMS> reducer;
     reducer.create(device);
-    auto               in_buffer  = device.create_buffer<int32>(array_size);
-    auto               out_buffer = device.create_buffer<int32>(1);
-    std::vector<int32> result(1);
+    auto                 in_buffer  = device.create_buffer<int32>(array_size);
+    auto                 out_buffer = device.create_buffer<int32>(1);
+    luisa::vector<int32> result(1);
 
-    std::vector<int32> input_data(array_size);
+    luisa::vector<int32> input_data(array_size);
     for(int i = 0; i < array_size; i++)
     {
         input_data[i] = i;
@@ -95,7 +95,7 @@ int main(int argc, char* argv[])
     };
 
     // auto index_out_buffer = device.create_buffer<luisa::uint>(1);
-    // std::vector<luisa::uint> index_result(1);
+    // luisa::vector<luisa::uint> index_result(1);
     // reducer.ArgMin(cmdlist,
     //                stream,
     //                in_buffer.view(),
@@ -152,7 +152,7 @@ int main(int argc, char* argv[])
     constexpr int items_per_segment = 2;
     const int segments = (array_size + items_per_segment - 1) / items_per_segment;  // 向上取整
 
-    std::vector<int32> input_keys(array_size);
+    luisa::vector<int32> input_keys(array_size);
     for(auto i = 0; i < array_size; i++)
     {
         input_keys[i] = i / items_per_segment;  // 每 100 个元素一组
@@ -182,9 +182,9 @@ int main(int argc, char* argv[])
         [](const Var<int32>& a, const Var<int32>& b) { return a + b; },
         in_buffer.size());
 
-    std::vector<int32>       unique_keys(segments);
-    std::vector<int32>       aggregates(segments);
-    std::vector<luisa::uint> num_runs(1);
+    luisa::vector<int32>       unique_keys(segments);
+    luisa::vector<int32>       aggregates(segments);
+    luisa::vector<luisa::uint> num_runs(1);
     stream << unique_keys_buffer.copy_to(unique_keys.data()) << synchronize();  // 输出结果
     stream << aggregates_buffer.copy_to(aggregates.data()) << synchronize();  // 输出结果
     stream << num_runs_buffer.copy_to(num_runs.data()) << synchronize();  // 输出结果

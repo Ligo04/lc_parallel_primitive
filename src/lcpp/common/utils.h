@@ -29,7 +29,7 @@ static inline int imax(int a, int b)
 {
     return a > b ? a : b;
 }
-static inline bool is_power_of_two(int x)
+static constexpr inline bool is_power_of_two(int x)
 {
     return (x & (x - 1)) == 0;
 }
@@ -142,26 +142,27 @@ inline luisa::compute::Int conflict_free_offset(luisa::compute::Int i)
 inline luisa::compute::UInt get_lane_mask_ge(luisa::compute::UInt lane_id,
                                              luisa::compute::UInt wave_size)
 {
-    return (~((1u << lane_id) - 1u)) & ((1u << wave_size) - 1u);
+    luisa::compute::ULong mask64 = ~((1ull << lane_id) - 1ull);
+    mask64 &= (1ull << wave_size) - 1ull;
+    return static_cast<luisa::compute::UInt>(mask64);
 }
 
-inline luisa::compute::UInt get_lane_mask_le(luisa::compute::UInt lane_id,
-                                             luisa::compute::UInt wave_size)
+inline luisa::compute::UInt get_lane_mask_le(luisa::compute::UInt lane_id)
 {
     return (1u << (lane_id + 1)) - 1u;
 }
 
 template <size_t LOGIC_WARP_SIZE>
-inline luisa::compute::uint warp_mask(luisa::compute::uint warp_id)
+inline luisa::compute::UInt warp_mask(luisa::compute::UInt warp_id)
 {
     constexpr bool is_pow_of_two = is_power_of_two(LOGIC_WARP_SIZE);
     constexpr bool is_arch_warp  = (LOGIC_WARP_SIZE == details::WARP_SIZE);
 
-    luisa::compute::uint member_mask = 0xFFFFFFFFu >> (details::WARP_SIZE - LOGIC_WARP_SIZE);
+    luisa::compute::UInt member_mask = 0xFFFFFFFFu >> (details::WARP_SIZE - LOGIC_WARP_SIZE);
 
     if constexpr(is_pow_of_two && !is_arch_warp)
     {
-        member_mask <<= warp_id * LOGIC_WARP_SIZE;
+        member_mask <<= warp_id * luisa::compute::UInt(LOGIC_WARP_SIZE);
     };
 
     return member_mask;

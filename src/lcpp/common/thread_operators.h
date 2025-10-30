@@ -58,4 +58,24 @@ struct ReduceByKeyOp
         return result;
     }
 };
+
+template <typename ScanOp>
+struct SwizzleScanOp
+{
+    ScanOp scan_op;
+
+  public:
+    SwizzleScanOp(ScanOp scan_op)
+        : scan_op(scan_op)
+    {
+    }
+
+    template <typename Type>
+    Var<Type> operator()(const Var<Type>& a, const Var<Type>& b) const noexcept
+    {
+        Var<Type> _a = a;
+        Var<Type> _b = b;
+        return scan_op(_b, _a);
+    }
+};
 };  // namespace luisa::parallel_primitive

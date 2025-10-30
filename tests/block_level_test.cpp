@@ -23,7 +23,7 @@ int main(int argc, char* argv[])
 
     Context context{argv[1]};
 #ifdef _WIN32
-    Device device = context.create_device("cuda");
+    Device device = context.create_device("dx");
 #elif __APPLE__
     Device device = context.create_device("metal");
 #endif
@@ -37,9 +37,9 @@ int main(int argc, char* argv[])
 
     auto in_buffer  = device.create_buffer<int32>(array_size);
     auto out_buffer = device.create_buffer<int32>(array_size / BLOCKSIZE);
-    std::vector<int32> result(array_size / BLOCKSIZE);
+    luisa::vector<int32> result(array_size / BLOCKSIZE);
 
-    std::vector<int32> input_data(array_size);
+    luisa::vector<int32> input_data(array_size);
     for(int i = 0; i < array_size; i++)
     {
         input_data[i] = i;

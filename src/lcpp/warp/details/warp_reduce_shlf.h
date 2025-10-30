@@ -7,6 +7,7 @@
 
 
 #pragma once
+#include "luisa/core/basic_traits.h"
 #include "luisa/dsl/stmt.h"
 #include <luisa/dsl/sugar.h>
 #include <luisa/dsl/func.h>
@@ -68,14 +69,13 @@ namespace details
                              >> (warp_id * UInt(LOGIC_WARP_SIZE));
             };
 
-            warp_flags &= get_lane_mask_ge(compute::warp_lane_id(),
-                                           compute::warp_lane_count());
+            warp_flags &= get_lane_mask_ge(lane_id, wave_size);
 
-            warp_flags |= 1u << (compute::warp_lane_count() - 1);
+            warp_flags |= 1u << (wave_size - 1u);
 
             UInt last_lane = compute::clz(compute::reverse(warp_flags));
 
-            return Reduce(input, redecu_op, last_lane);
+            return Reduce(input, redecu_op, last_lane + 1);
         }
     };
 }  // namespace details
