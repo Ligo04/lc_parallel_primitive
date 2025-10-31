@@ -96,21 +96,6 @@ luisa::compute::Var<Type4Byte> ShuffleUp(luisa::compute::Var<Type4Byte>& input,
 };
 
 
-template <NumericT Type4Byte>
-luisa::compute::Var<Type4Byte> ShuffleDown(luisa::compute::Var<Type4Byte>& input,
-                                           luisa::compute::UInt curr_lane_id,
-                                           luisa::compute::UInt offset,
-                                           luisa::compute::UInt last_lane = 32u)
-{
-    luisa::compute::UInt src_lane = curr_lane_id + offset;
-    luisa::compute::Var<Type4Byte> result = compute::warp_read_lane(input, src_lane);
-    $if(src_lane > last_lane)
-    {
-        result = input;
-    };
-    return result;
-};
-
 template <NumericT KeyType, NumericT ValueType>
 luisa::compute::Var<KeyValuePair<KeyType, ValueType>> ShuffleUp(
     luisa::compute::Var<KeyValuePair<KeyType, ValueType>>& input,
@@ -132,6 +117,39 @@ luisa::compute::Var<KeyValuePair<KeyType, ValueType>> ShuffleUp(
     return result;
 };
 
+template <NumericT Type4Byte>
+luisa::compute::Var<Type4Byte> ShuffleDown(luisa::compute::Var<Type4Byte>& input,
+                                           luisa::compute::UInt curr_lane_id,
+                                           luisa::compute::UInt offset,
+                                           luisa::compute::UInt last_lane = 32u)
+{
+    luisa::compute::UInt src_lane = curr_lane_id + offset;
+    luisa::compute::Var<Type4Byte> result = compute::warp_read_lane(input, src_lane);
+    $if(src_lane > last_lane)
+    {
+        result = input;
+    };
+    return result;
+};
+
+
+template <NumericT KeyType, NumericT ValueType>
+luisa::compute::Var<KeyValuePair<KeyType, ValueType>> ShuffleDown(
+    luisa::compute::Var<KeyValuePair<KeyType, ValueType>>& input,
+    luisa::compute::UInt                                   curr_lane_id,
+    luisa::compute::UInt                                   offset,
+    luisa::compute::UInt                                   last_lane = 32u)
+{
+    luisa::compute::Var<KeyValuePair<KeyType, ValueType>> result;
+    luisa::compute::UInt src_lane = curr_lane_id + offset;
+    result.key   = compute::warp_read_lane(input.key, src_lane);
+    result.value = compute::warp_read_lane(input.value, src_lane);
+    $if(src_lane > last_lane)
+    {
+        result = input;
+    };
+    return result;
+};
 
 template <size_t log_mem_banks = 5>
 inline luisa::compute::Int conflict_free_offset(luisa::compute::Int i)
