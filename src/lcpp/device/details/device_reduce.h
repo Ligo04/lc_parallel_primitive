@@ -6,6 +6,7 @@
  */
 
 #pragma once
+#include "lcpp/common/type_trait.h"
 #include <cstddef>
 #include <luisa/dsl/sugar.h>
 #include <luisa/dsl/func.h>
@@ -23,13 +24,57 @@ namespace details
     using namespace luisa::compute;
 
 
-    template <NumericT Type4Byte>
-    using ArgConstructShaderT =
-        Shader<1, Buffer<Type4Byte>, Buffer<IndexValuePairT<Type4Byte>>>;
+    template <NumericT Type4Byte, size_t BLOCK_SIZE = details::BLOCK_SIZE>
+    class ArgReduce : public LuisaModule
+    {
+      public:
+        using ArgConstructShaderT =
+            Shader<1, Buffer<Type4Byte>, Buffer<IndexValuePairT<Type4Byte>>>;
 
-    template <NumericT Type4Byte>
-    using ArgAssignShaderT =
-        Shader<1, Buffer<IndexValuePairT<Type4Byte>>, Buffer<Type4Byte>, Buffer<uint>>;
+        using ArgAssignShaderT =
+            Shader<1, Buffer<IndexValuePairT<Type4Byte>>, Buffer<Type4Byte>, Buffer<uint>>;
+
+        U<ArgConstructShaderT> compile_arg_construct_shader(Device& device)
+        {
+            U<ArgConstructShaderT> ms_arg_construct_shader = nullptr;
+            lazy_compile(device,
+                         ms_arg_construct_shader,
+                         [&](BufferVar<Type4Byte>                  arr_in,
+                             BufferVar<IndexValuePairT<Type4Byte>> g_kv_out)
+                         {
+                             set_block_size(BLOCK_SIZE);
+                             Int global_id =
+                                 Int(block_id().x * block_size().x + thread_id().x);
+
+                             Var<IndexValuePairT<Type4Byte>> initial{0, 0};
+                             initial.key   = global_id;
+                             initial.value = arr_in.read(global_id);
+                             g_kv_out.write(global_id, initial);
+                         });
+            return ms_arg_construct_shader;
+        }
+
+        U<ArgAssignShaderT> compile_arg_assign_shader(Device& device)
+        {
+            U<ArgAssignShaderT> ms_arg_assign_shader = nullptr;
+            lazy_compile(device,
+                         ms_arg_assign_shader,
+                         [&](BufferVar<IndexValuePairT<Type4Byte>> kvp_in,
+                             BufferVar<Type4Byte>                  value_out,
+                             BufferVar<uint>                       index_out)
+                         {
+                             set_block_size(BLOCK_SIZE);
+                             UInt global_id = UInt(block_id().x * block_size().x
+                                                   + thread_id().x);
+
+                             Var<IndexValuePairT<Type4Byte>> kvp = kvp_in.read(global_id);
+                             index_out.write(global_id, kvp.key);
+                             value_out.write(global_id, kvp.value);
+                         });
+            return ms_arg_assign_shader;
+        }
+    };
+
 
     template <NumericTOrKeyValuePairT DataType, size_t BLOCK_SIZE = details::BLOCK_SIZE, size_t ITEMS_PER_THREAD = details::ITEMS_PER_THREAD>
     class ReduceShader : public LuisaModule

@@ -6,10 +6,7 @@
  */
 
 #pragma once
-#include "lcpp/device/details/single_pass_scan_operator.h"
-#include "luisa/core/mathematics.h"
-#include "luisa/dsl/func.h"
-#include "luisa/runtime/buffer.h"
+#include <luisa/core/mathematics.h>
 #include <luisa/dsl/local.h>
 #include <limits>
 #include <luisa/core/basic_traits.h>
@@ -61,9 +58,7 @@ class DeviceReduce : public LuisaModule
         int num_elements_per_block = m_block_size * ITEMS_PER_THREAD;
         int extra_space            = num_elements_per_block / m_warp_nums;
         m_shared_mem_size          = (num_elements_per_block + extra_space);
-        compile_common<int>(device);
-        compile_common<float>(device);
-        m_created = true;
+        m_created                  = true;
     }
 
     template <NumericT Type4Byte, typename ReduceOp>
@@ -167,40 +162,23 @@ class DeviceReduce : public LuisaModule
         Buffer<IndexValuePairT<Type4Byte>> d_in_kv =
             m_device.create_buffer<IndexValuePairT<Type4Byte>>(d_in.size());
 
-        // construct key value pair
-        auto key = luisa::compute::Type::of<Type4Byte>()->description();
-        auto ms_kvp_construct_it = ms_arg_construct_map.find(key);
-        auto ms_kvp_construct_ptr =
-            reinterpret_cast<details::ArgConstructShaderT<Type4Byte>*>(
-                &(*ms_kvp_construct_it->second));
-        cmdlist << (*ms_kvp_construct_ptr)(d_in, d_in_kv.view()).dispatch(d_in.size());
-
         Buffer<IndexValuePairT<Type4Byte>> d_out_kv =
             m_device.create_buffer<IndexValuePairT<Type4Byte>>(1);
 
-        Reduce(
-            cmdlist,
-            stream,
-            d_in_kv.view(),
-            d_out_kv.view(),
-            num_item,
-            [](const Var<IndexValuePairT<Type4Byte>>& a, Var<IndexValuePairT<Type4Byte>>& b)
-            {
-                Var<IndexValuePairT<Type4Byte>> result = a;
-                $if(b.value < a.value | (b.value == a.value & b.key < a.key))
-                {
-                    result = b;
-                };
-                return result;
-            },
-            IndexValuePairT<Type4Byte>{0, std::numeric_limits<Type4Byte>::max()});
+        // construct key value pair
+        arg_construct<Type4Byte>(cmdlist, d_in, d_in_kv.view());
+
+        Reduce(cmdlist,
+               stream,
+               d_in_kv.view(),
+               d_out_kv.view(),
+               num_item,
+               ArgMinOp(),
+               IndexValuePairT<Type4Byte>{0, std::numeric_limits<Type4Byte>::max()});
 
         // copy result to d_out and d_index_out
-        auto ms_kvp_assign_it = ms_arg_assign_map.find(key);
-        auto ms_kvp_assign_ptr = reinterpret_cast<details::ArgAssignShaderT<Type4Byte>*>(
-            &(*ms_kvp_assign_it->second));
-        cmdlist << (*ms_kvp_assign_ptr)(d_out_kv.view(), d_out, d_index_out)
-                       .dispatch(d_index_out.size());
+        arg_assign<Type4Byte>(cmdlist, d_out_kv.view(), d_out, d_index_out);
+
         stream << cmdlist.commit() << synchronize();
     }
 
@@ -215,41 +193,23 @@ class DeviceReduce : public LuisaModule
         // key value pair reduce
         Buffer<IndexValuePairT<Type4Byte>> d_in_kv =
             m_device.create_buffer<IndexValuePairT<Type4Byte>>(d_in.size());
-
-        // construct key value pair
-        auto key = luisa::compute::Type::of<Type4Byte>()->description();
-        auto ms_arg_construct_it = ms_arg_construct_map.find(key);
-        auto ms_arg_construct_ptr =
-            reinterpret_cast<details::ArgConstructShaderT<Type4Byte>*>(
-                &(*ms_arg_construct_it->second));
-        cmdlist << (*ms_arg_construct_ptr)(d_in, d_in_kv.view()).dispatch(d_in.size());
         Buffer<IndexValuePairT<Type4Byte>> d_out_kv =
             m_device.create_buffer<IndexValuePairT<Type4Byte>>(1);
 
-        Reduce(
-            cmdlist,
-            stream,
-            d_in_kv.view(),
-            d_out_kv.view(),
-            num_item,
-            [](const Var<IndexValuePairT<Type4Byte>>& a, Var<IndexValuePairT<Type4Byte>>& b)
-            {
-                Var<IndexValuePairT<Type4Byte>> result = a;
-                $if(b.value > a.value | (b.value == a.value & b.key > a.key))
-                {
-                    result = b;
-                };
-                return result;
-            },
-            IndexValuePairT<Type4Byte>{0, std::numeric_limits<Type4Byte>::min()});
+        // construct key value pair
+        arg_construct<Type4Byte>(cmdlist, d_in, d_in_kv.view());
+
+        Reduce(cmdlist,
+               stream,
+               d_in_kv.view(),
+               d_out_kv.view(),
+               num_item,
+               ArgMaxOp(),
+               IndexValuePairT<Type4Byte>{0, std::numeric_limits<Type4Byte>::min()});
 
 
         // copy result to d_out and d_index_out
-        auto ms_arg_assign_it = ms_arg_assign_map.find(key);
-        auto ms_arg_assign_ptr = reinterpret_cast<details::ArgAssignShaderT<Type4Byte>*>(
-            &(*ms_arg_assign_it->second));
-        cmdlist << (*ms_arg_assign_ptr)(d_out_kv.view(), d_out, d_index_out)
-                       .dispatch(d_index_out.size());
+        arg_assign<Type4Byte>(cmdlist, d_out_kv.view(), d_out, d_index_out);
         stream << cmdlist.commit() << synchronize();
     }
 
@@ -310,51 +270,45 @@ class DeviceReduce : public LuisaModule
 
   private:
     template <NumericT Type4Byte>
-    void compile_common(Device& device)
+    void arg_construct(CommandList&                           cmdlist,
+                       BufferView<Type4Byte>                  d_in,
+                       BufferView<IndexValuePairT<Type4Byte>> d_kv_out)
     {
-        const auto   n_blocks        = m_block_size;
-        const size_t shared_mem_size = m_shared_mem_size;
+        using ArgReduce          = details::ArgReduce<Type4Byte, BLOCK_SIZE>;
+        using ArgConstructShader = ArgReduce::ArgConstructShaderT;
+        auto key = luisa::string{luisa::compute::Type::of<Type4Byte>()->description()};
+        auto ms_arg_construct_it = ms_arg_construct_map.find(key);
+        if(ms_arg_construct_it == ms_arg_construct_map.end())
+        {
+            auto shader = ArgReduce().compile_arg_construct_shader(m_device);
+            ms_arg_construct_map.try_emplace(key, std::move(shader));
+            ms_arg_construct_it = ms_arg_construct_map.find(key);
+        }
+        auto ms_arg_construct_ptr =
+            reinterpret_cast<ArgConstructShader*>(&(*ms_arg_construct_it->second));
+        cmdlist << (*ms_arg_construct_ptr)(d_in, d_kv_out).dispatch(d_in.size());
+    }
 
-        // for construct key value pair
-        luisa::unique_ptr<details::ArgConstructShaderT<Type4Byte>> ms_arg_construct_shader =
-            nullptr;
-        lazy_compile(device,
-                     ms_arg_construct_shader,
-                     [&](BufferVar<Type4Byte> arr_in,
-                         BufferVar<IndexValuePairT<Type4Byte>> g_kv_out) noexcept
-                     {
-                         set_block_size(m_block_size);
-                         Int global_id =
-                             Int(block_id().x * block_size().x + thread_id().x);
-
-                         Var<IndexValuePairT<Type4Byte>> initial{0, 0};
-                         initial.key   = global_id;
-                         initial.value = arr_in.read(global_id);
-                         g_kv_out.write(global_id, initial);
-                     });
-        ms_arg_construct_map.try_emplace(
-            luisa::string{luisa::compute::Type::of<Type4Byte>()->description()},
-            std::move(ms_arg_construct_shader));
-
-
-        luisa::unique_ptr<details::ArgAssignShaderT<Type4Byte>> ms_arg_assign_shader = nullptr;
-        lazy_compile(device,
-                     ms_arg_assign_shader,
-                     [&](BufferVar<IndexValuePairT<Type4Byte>> kvp_in,
-                         BufferVar<Type4Byte>                  value_out,
-                         BufferVar<uint> index_out) noexcept
-                     {
-                         set_block_size(m_block_size);
-                         UInt global_id =
-                             UInt(block_id().x * block_size().x + thread_id().x);
-
-                         Var<IndexValuePairT<Type4Byte>> kvp = kvp_in.read(global_id);
-                         index_out.write(global_id, kvp.key);
-                         value_out.write(global_id, kvp.value);
-                     });
-        ms_arg_assign_map.try_emplace(
-            luisa::string{luisa::compute::Type::of<Type4Byte>()->description()},
-            std::move(ms_arg_assign_shader));
+    template <NumericT Type4Byte>
+    void arg_assign(CommandList&                           cmdlist,
+                    BufferView<IndexValuePairT<Type4Byte>> d_kv_in,
+                    BufferView<Type4Byte>                  d_value_out,
+                    BufferView<uint>                       d_index_out)
+    {
+        using ArgReduce       = details::ArgReduce<Type4Byte, BLOCK_SIZE>;
+        using ArgAssignShader = ArgReduce::ArgAssignShaderT;
+        auto key = luisa::string{luisa::compute::Type::of<Type4Byte>()->description()};
+        auto ms_arg_assign_it = ms_arg_assign_map.find(key);
+        if(ms_arg_assign_it == ms_arg_assign_map.end())
+        {
+            auto shader = ArgReduce().compile_arg_assign_shader(m_device);
+            ms_arg_assign_map.try_emplace(key, std::move(shader));
+            ms_arg_assign_it = ms_arg_assign_map.find(key);
+        }
+        auto ms_arg_assign_ptr =
+            reinterpret_cast<ArgAssignShader*>(&(*ms_arg_assign_it->second));
+        cmdlist << (*ms_arg_assign_ptr)(d_kv_in, d_value_out, d_index_out)
+                       .dispatch(d_index_out.size());
     }
 
     template <NumericTOrKeyValuePairT Type, typename ReduceOp>
@@ -411,6 +365,102 @@ class DeviceReduce : public LuisaModule
         if(ms_reduce_it == ms_reduce_map.end())
         {
             LUISA_INFO("Compiling Reduce shader for key: {}", key);
+            auto shader = ReduceShader().compile(m_device, m_shared_mem_size, reduce_op);
+            ms_reduce_map.try_emplace(key, std::move(shader));
+            ms_reduce_it = ms_reduce_map.find(key);
+        }
+        auto ms_reduce_ptr = reinterpret_cast<ReduceKernel*>(&(*ms_reduce_it->second));
+
+        if(num_tiles > 1)
+        {
+            cmdlist << (*ms_reduce_ptr)(arr_in, temp_buffer_level, num_elements, 0, 0, init)
+                           .dispatch(m_block_size * (num_tiles - np2_last_block));
+            if(np2_last_block)
+            {
+                // Last Block
+                cmdlist << (*ms_reduce_ptr)(arr_in,
+                                            temp_buffer_level,
+                                            num_elements_last_block,
+                                            num_tiles - 1,
+                                            num_elements - num_elements_last_block,
+                                            init)
+                               .dispatch(m_block_size);
+            }
+            // recursive
+            reduce_array_recursive<Type>(cmdlist,
+                                         temp_buffer_level,
+                                         temp_buffer_level,
+                                         arr_out,
+                                         num_tiles,
+                                         num_tiles,
+                                         level + 1,
+                                         reduce_op,
+                                         init);
+        }
+        else
+        {
+            // non-recursive
+            cmdlist << (*ms_reduce_ptr)(arr_in, temp_buffer_level, num_elements, 0, 0, init)
+                           .dispatch(m_block_size);
+            cmdlist << arr_out.copy_from(temp_buffer_level);
+        }
+    };
+
+
+    template <NumericTOrKeyValuePairT Type, typename ReduceOp, typename TransformOp>
+    void reduce_transform_array_recursive(luisa::compute::CommandList& cmdlist,
+                                          BufferView<Type> temp_storage,
+                                          BufferView<Type> arr_in,
+                                          BufferView<Type> arr_out,
+                                          int              num_elements,
+                                          int              offset,
+                                          int              level,
+                                          ReduceOp         reduce_op,
+                                          TransformOp      transform_op,
+                                          Type             init) noexcept
+    {
+        int num_tiles =
+            imax(1, (int)ceil((float)num_elements / (ITEMS_PER_THREAD * m_block_size)));
+        int num_threads;
+
+        if(num_tiles > 1)
+        {
+            num_threads = m_block_size;
+        }
+        else if(is_power_of_two(num_elements))
+        {
+            num_threads = num_elements / ITEMS_PER_THREAD;
+        }
+        else
+        {
+            num_threads = floor_pow_2(num_elements);
+        }
+
+        int num_elements_per_block = num_threads * ITEMS_PER_THREAD;
+        int num_elements_last_block = num_elements - (num_tiles - 1) * num_elements_per_block;
+        int num_threads_last_block = imax(1, num_elements_last_block);
+        int np2_last_block         = 0;
+        int shared_mem_last_block  = 0;
+
+        if(num_elements_last_block != num_elements_per_block)
+        {
+            // NOT POWER OF 2
+            np2_last_block = 1;
+            if(!is_power_of_two(num_elements_last_block))
+            {
+                num_threads_last_block = floor_pow_2(num_elements_last_block);
+            }
+        }
+        using ReduceShader = details::ReduceShader<Type, BLOCK_SIZE, ITEMS_PER_THREAD>;
+        using ReduceKernel = ReduceShader::ReduceShaderKernel;
+
+        size_t size_elements = temp_storage.size() - offset;
+        BufferView<Type> temp_buffer_level = temp_storage.subview(offset, size_elements);
+
+        auto key          = get_reduce_type_op_desc<Type>(reduce_op);
+        auto ms_reduce_it = ms_reduce_map.find(key);
+        if(ms_reduce_it == ms_reduce_map.end())
+        {
             auto shader = ReduceShader().compile(m_device, m_shared_mem_size, reduce_op);
             ms_reduce_map.try_emplace(key, std::move(shader));
             ms_reduce_it = ms_reduce_map.find(key);

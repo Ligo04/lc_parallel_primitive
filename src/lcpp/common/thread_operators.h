@@ -17,6 +17,36 @@ namespace luisa::parallel_primitive
 using namespace luisa::compute;
 
 
+struct ArgMaxOp
+{
+    template <NumericT Type4Byte>
+    Var<IndexValuePairT<Type4Byte>> operator()(const Var<IndexValuePairT<Type4Byte>>& a,
+                                               const Var<IndexValuePairT<Type4Byte>>& b) const noexcept
+    {
+        Var<IndexValuePairT<Type4Byte>> result = a;
+        $if(b.value > a.value | (b.value == a.value & b.key > a.key))
+        {
+            result = b;
+        };
+        return result;
+    }
+};
+
+struct ArgMinOp
+{
+    template <NumericT Type4Byte>
+    Var<IndexValuePairT<Type4Byte>> operator()(const Var<IndexValuePairT<Type4Byte>>& a,
+                                               const Var<IndexValuePairT<Type4Byte>>& b) const noexcept
+    {
+        Var<IndexValuePairT<Type4Byte>> result = a;
+        $if(b.value < a.value | (b.value == a.value & b.key < a.key))
+        {
+            result = b;
+        };
+        return result;
+    }
+};
+
 struct IdentityOp
 {
     template <NumericT DataType>
