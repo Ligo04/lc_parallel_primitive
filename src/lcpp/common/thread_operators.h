@@ -17,6 +17,15 @@ namespace luisa::parallel_primitive
 using namespace luisa::compute;
 
 
+struct IdentityOp
+{
+    template <NumericT DataType>
+    Var<DataType> operator()(const Var<DataType>& data) const noexcept
+    {
+        return data;
+    }
+};
+
 template <typename ReduceOpT>
 struct ReduceBySegmentOp
 {

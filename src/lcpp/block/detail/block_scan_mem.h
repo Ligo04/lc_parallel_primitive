@@ -6,6 +6,7 @@
  */
 
 #pragma once
+#include "lcpp/runtime/core.h"
 #include <cstddef>
 #include <luisa/dsl/sugar.h>
 #include <luisa/dsl/func.h>
@@ -20,10 +21,10 @@ namespace details
     using SmemTypePtr = luisa::compute::Shared<T>*;
 
     using namespace luisa::compute;
-    template <typename Type4Byte, size_t BLOCK_SIZE = 256, size_t WARP_SIZE = 32>
+    template <typename Type4Byte, size_t BLOCK_SIZE = details::BLOCK_SIZE, size_t WARP_SIZE = details::WARP_SIZE>
     struct BlockScanMem
     {
-        template <typename ScanOp = luisa::compute::Callable<Var<Type4Byte>(const Var<Type4Byte>&, const Var<Type4Byte>&)>>
+        template <typename ScanOp>
         void ExclusiveScan(SmemTypePtr<Type4Byte>& m_shared_mem,
                            const Var<Type4Byte>&   thread_data,
                            Var<Type4Byte>&         exclusive_output,

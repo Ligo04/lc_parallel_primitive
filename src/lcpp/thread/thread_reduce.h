@@ -14,7 +14,7 @@
 namespace luisa::parallel_primitive
 {
 
-template <typename Type4Byte>
+template <typename Type4Byte, size_t ITEMS_PER_THREAD = details::ITEMS_PER_THREAD>
 class ThreadReduce : public LuisaModule
 {
   public:
@@ -22,7 +22,7 @@ class ThreadReduce : public LuisaModule
     ~ThreadReduce() = default;
 
   public:
-    template <size_t ITEMS_PER_THREAD = 1, typename ReduceOp>
+    template <typename ReduceOp>
     Var<Type4Byte> Reduce(const compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& input, ReduceOp op)
     {
         Var<Type4Byte> result = input[0];
@@ -33,7 +33,7 @@ class ThreadReduce : public LuisaModule
         return result;
     };
 
-    template <size_t ITEMS_PER_THREAD = 1, typename ReduceOp>
+    template <typename ReduceOp>
     Var<Type4Byte> Reduce(const compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& input,
                           ReduceOp  op,
                           Type4Byte prefix)

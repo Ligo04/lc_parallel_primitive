@@ -66,12 +66,12 @@ class BlockReduce : public LuisaModule
         {
             $if(num_item >= compute::block_size().x)
             {
-                result = details::BlockReduceShfl<Type4Byte, BlockSize>().Reduce<true>(
+                result = details::BlockReduceShfl<Type4Byte, BlockSize>().template Reduce<true>(
                     m_shared_mem, thread_data, reduce_op, num_item);
             }
             $else
             {
-                result = details::BlockReduceShfl<Type4Byte, BlockSize>().Reduce<false>(
+                result = details::BlockReduceShfl<Type4Byte, BlockSize>().template Reduce<false>(
                     m_shared_mem, thread_data, reduce_op, num_item);
             };
         }
@@ -126,7 +126,7 @@ class BlockReduce : public LuisaModule
                           compute::UInt num_item)
     {
         Var<Type4Byte> thread_agg =
-            ThreadReduce<Type4Byte>().Reduce<ITEMS_PER_THREAD>(thread_data, op);
+            ThreadReduce<Type4Byte, ITEMS_PER_THREAD>().Reduce(thread_data, op);
 
         return Reduce(thread_agg, op, num_item);
     };

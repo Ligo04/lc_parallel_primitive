@@ -22,11 +22,10 @@ namespace details
     template <typename T>
     using SmemTypePtr = luisa::compute::Shared<T>*;
 
-    template <typename Type4Byte, size_t BLOCK_SIZE = 256, size_t WARP_SIZE = 32>
+    template <typename Type4Byte, size_t BLOCK_SIZE = details::BLOCK_SIZE, size_t WARP_SIZE = details::WARP_SIZE>
     struct BlockReduceShfl
     {
-        template <bool IS_FULL_TILE,
-                  typename ReduceOp = luisa::compute::Callable<Var<Type4Byte>(const Var<Type4Byte>&, const Var<Type4Byte>&)>>
+        template <bool IS_FULL_TILE, typename ReduceOp>
         Var<Type4Byte> Reduce(SmemTypePtr<Type4Byte>& m_shared_mem,
                               const Var<Type4Byte>&   thread_data,
                               ReduceOp                reduce_op,

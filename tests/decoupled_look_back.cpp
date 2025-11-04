@@ -1,30 +1,18 @@
-
-#include "lcpp/block/block_reduce.h"
-#include "lcpp/block/block_scan.h"
 #include "lcpp/common/keyvaluepair.h"
 #include "lcpp/device/details/single_pass_scan_operator.h"
 #include "lcpp/runtime/core.h"
-#include "lcpp/warp/warp_reduce.h"
-#include "lcpp/warp/warp_scan.h"
-#include "luisa/core/basic_traits.h"
 #include "luisa/core/logging.h"
+#include "luisa/core/stl/vector.h"
 #include "luisa/dsl/builtin.h"
-#include "luisa/dsl/func.h"
 #include "luisa/dsl/resource.h"
-#include "luisa/dsl/stmt.h"
 #include "luisa/dsl/var.h"
 #include "luisa/runtime/shader.h"
 #include "luisa/runtime/stream.h"
-#include "luisa/vstl/config.h"
-#include <atomic>
 #include <cmath>
 #include <cstddef>
-#include <cstdint>
 #include <lcpp/parallel_primitive.h>
 #include <boost/ut.hpp>
-#include <limits>
 #include <numeric>
-#include <vector>
 using namespace luisa;
 using namespace luisa::compute;
 using namespace luisa::parallel_primitive;
@@ -129,20 +117,31 @@ int main(int argc, char* argv[])
         stream << exclusive_buffer.copy_to(exclusive_result.data())
                << inclusive_buffer.copy_to(inclusive_result.data()) << synchronize();
 
+        luisa::vector<int> data(NUM_TILES);
+        for(auto i = 0; i < NUM_TILES; i++)
+        {
+            data[i] = i;
+        }
+        luisa::vector<int> exclusive_expected(NUM_TILES);
+        luisa::vector<int> inclusive_expected(NUM_TILES);
+        std::exclusive_scan(data.begin(), data.end(), exclusive_expected.begin(), 0);
+        std::inclusive_scan(data.begin(), data.end(), inclusive_expected.begin());
         for(size_t i = 0; i < NUM_TILES; i++)
         {
             LUISA_INFO("Tile {}: exclusive_result = {}, inclusive_result = {}",
                        i,
                        exclusive_result[i],
                        inclusive_result[i]);
+            expect(exclusive_result[i] == exclusive_expected[i]);
+            expect(inclusive_result[i] == inclusive_expected[i]);
         }
     };
 
     "decoupled_look_back_key_value_pair"_test = [&]()
     {
-        using KVP = luisa::parallel_primitive::KeyValuePair<int, float>;
+        using KVP = luisa::parallel_primitive::KeyValuePair<int, int>;
 
-        auto sum_op = [](const Var<double>& a, const Var<double>& b) noexcept
+        auto sum_op = [](const Var<int>& a, const Var<int>& b) noexcept
         { return a + b; };
 
         using KVPScanOp = ReduceByKeyOp<decltype(sum_op)>;
@@ -152,15 +151,15 @@ int main(int argc, char* argv[])
         auto exclusive_buffer = device.create_buffer<KVP>(NUM_TILES);
         auto inclusive_buffer = device.create_buffer<KVP>(NUM_TILES);
 
-        luisa::unique_ptr<Shader<1, Buffer<ScanTileState<KVP>>>> init_kernel = nullptr;
-        lazy_compile(
-            device,
-            init_kernel,
-            [&](BufferVar<ScanTileState<KVP>> tile_state) noexcept
-            { ScanTileStateViewer::InitializeWardStatus(tile_state, NUM_TILES); });
+        // luisa::unique_ptr<Shader<1, Buffer<ScanTileState<KVP>>>> init_kernel = nullptr;
+        // lazy_compile(
+        //     device,
+        //     init_kernel,
+        //     [&](BufferVar<ScanTileState<KVP>> tile_state) noexcept
+        //     { ScanTileStateViewer::InitializeWardStatus(tile_state, NUM_TILES); });
 
-        cmdlist << (*init_kernel)(scan_tile_buffer.view()).dispatch(num_blocks);
-        stream << cmdlist.commit() << synchronize();
+        // cmdlist << (*init_kernel)(scan_tile_buffer.view()).dispatch(num_blocks);
+        // stream << cmdlist.commit() << synchronize();
 
 
         luisa::unique_ptr<Shader<1, Buffer<ScanTileState<KVP>>, Buffer<KVP>, Buffer<KVP>>> decoupled_look_back_kernel =
@@ -184,7 +183,7 @@ int main(int argc, char* argv[])
                 tile_prefix_op    prefix(tile_state, temp_storage, scan_op);
                 const auto        tile_idx = prefix.GetTileIndex();
                 compute::Var<KVP> block_aggregate;
-                block_aggregate.key   = 1;
+                block_aggregate.key   = def(1);
                 block_aggregate.value = block_id().x;
                 $if(tile_idx == 0)
                 {
@@ -221,15 +220,29 @@ int main(int argc, char* argv[])
         luisa::vector<KVP> inclusive_result(NUM_TILES);
         stream << exclusive_buffer.copy_to(exclusive_result.data())
                << inclusive_buffer.copy_to(inclusive_result.data()) << synchronize();
-
-        for(size_t i = 0; i < NUM_TILES; i++)
+        luisa::vector<int> data(NUM_TILES);
+        for(auto i = 0; i < NUM_TILES; i++)
         {
+            data[i] = i;
+        }
+        luisa::vector<int> exclusive_expected(NUM_TILES);
+        luisa::vector<int> inclusive_expected(NUM_TILES);
+        std::exclusive_scan(data.begin(), data.end(), exclusive_expected.begin(), 0);
+        std::inclusive_scan(data.begin(), data.end(), inclusive_expected.begin());
+        for(size_t i = 1; i < NUM_TILES; i++)
+        {
+
             LUISA_INFO("Tile {}: exclusive_result: key:{},value:{}, inclusive_result: key:{},value:{}",
                        i,
                        exclusive_result[i].key,
                        exclusive_result[i].value,
                        inclusive_result[i].key,
                        inclusive_result[i].value);
+
+            expect(exclusive_result[i].key == 1);
+            expect(exclusive_result[i].value == exclusive_expected[i]);
+            expect(inclusive_result[i].key == 1);
+            expect(inclusive_result[i].value == inclusive_expected[i]);
         }
     };
 }

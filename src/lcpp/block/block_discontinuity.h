@@ -14,7 +14,7 @@
 
 namespace luisa::parallel_primitive
 {
-template <NumericT Type4Byte, size_t BlockSize = 256, size_t ITEMS_PER_THREAD = 2>
+template <NumericT Type4Byte, size_t BlockSize = details::BLOCK_SIZE, size_t ITEMS_PER_THREAD = details::ITEMS_PER_THREAD>
 class BlockDiscontinuity : public LuisaModule
 {
   public:

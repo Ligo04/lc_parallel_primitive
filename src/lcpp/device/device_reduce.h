@@ -6,8 +6,10 @@
  */
 
 #pragma once
+#include "lcpp/device/details/single_pass_scan_operator.h"
 #include "luisa/core/mathematics.h"
 #include "luisa/dsl/func.h"
+#include "luisa/runtime/buffer.h"
 #include <luisa/dsl/local.h>
 #include <limits>
 #include <luisa/core/basic_traits.h>
@@ -38,13 +40,9 @@ namespace luisa::parallel_primitive
 {
 
 using namespace luisa::compute;
-template <size_t BLOCK_SIZE = 256, size_t ITEMS_PER_THREAD = 1, size_t WARP_NUMS = 32>
+template <size_t BLOCK_SIZE = details::BLOCK_SIZE, size_t WARP_NUMS = details::WARP_SIZE, size_t ITEMS_PER_THREAD = details::ITEMS_PER_THREAD>
 class DeviceReduce : public LuisaModule
 {
-  private:
-    template <NumericT Type4Byte>
-    using IndexValuePairT = details::IndexValuePairT<Type4Byte>;
-
   private:
     uint m_block_size = BLOCK_SIZE;
     uint m_warp_nums  = WARP_NUMS;
@@ -74,14 +72,14 @@ class DeviceReduce : public LuisaModule
                 BufferView<Type4Byte> d_in,
                 BufferView<Type4Byte> d_out,
                 size_t                num_item,
-                ReduceOp              op,
+                ReduceOp              reduce_op,
                 Type4Byte             init)
     {
         size_t temp_storage_size = 0;
         get_temp_size_scan(temp_storage_size, m_block_size, ITEMS_PER_THREAD, num_item);
         Buffer<Type4Byte> temp_buffer = m_device.create_buffer<Type4Byte>(temp_storage_size);
         reduce_array_recursive<Type4Byte>(
-            cmdlist, temp_buffer.view(), d_in, d_out, num_item, 0, 0, op, init);
+            cmdlist, temp_buffer.view(), d_in, d_out, num_item, 0, 0, reduce_op, init);
         stream << cmdlist.commit() << synchronize();
     }
 
@@ -91,7 +89,7 @@ class DeviceReduce : public LuisaModule
                 BufferView<IndexValuePairT<Type4Byte>> d_in,
                 BufferView<IndexValuePairT<Type4Byte>> d_out,
                 size_t                                 num_item,
-                ReduceOp                               op,
+                ReduceOp                               reduce_op,
                 IndexValuePairT<Type4Byte>             init)
     {
         size_t temp_storage_size = 0;
@@ -99,7 +97,7 @@ class DeviceReduce : public LuisaModule
         Buffer<IndexValuePairT<Type4Byte>> temp_buffer =
             m_device.create_buffer<IndexValuePairT<Type4Byte>>(temp_storage_size);
         reduce_array_recursive<IndexValuePairT<Type4Byte>>(
-            cmdlist, temp_buffer.view(), d_in, d_out, num_item, 0, 0, op, init);
+            cmdlist, temp_buffer.view(), d_in, d_out, num_item, 0, 0, reduce_op, init);
         stream << cmdlist.commit() << synchronize();
     }
 
@@ -256,30 +254,45 @@ class DeviceReduce : public LuisaModule
     }
 
 
-    template <NumericT KeyType,
-              NumericT ValueType,
-              typename ReduceOp = luisa::compute::Callable<Var<ValueType>(const Var<ValueType>&, const Var<ValueType>&)>>
+    template <NumericT KeyType, NumericT ValueType, typename ReduceOp>
     void ReduceByKey(CommandList&          cmdlist,
                      Stream&               stream,
                      BufferView<KeyType>   d_keys_in,
                      BufferView<ValueType> d_values_in,
                      BufferView<KeyType>   d_unique_out,
-                     BufferView<ValueType> d_aggregates_out,
-                     BufferView<uint>      d_num_runs_out,
+                     BufferView<ValueType> g_aggregates_out,
+                     BufferView<uint>      g_num_runs_out,
                      ReduceOp              reduce_op,
-                     size_t                num_element)
+                     size_t                num_elements)
     {
-        reduce_by_key_array(
-            cmdlist, d_keys_in, d_values_in, d_unique_out, d_aggregates_out, d_num_runs_out, reduce_op, num_element);
+        luisa::vector<luisa::uint> zero_data(1, 0);
+        stream << g_num_runs_out.copy_from(zero_data.data()) << synchronize();
+        int num_tiles =
+            imax(1, (int)ceil((float)num_elements / (ITEMS_PER_THREAD * m_block_size)));
+        // tilestate
+        using ReduceByKey =
+            details::ReduceByKeyModule<KeyType, ValueType, BLOCK_SIZE, ITEMS_PER_THREAD>;
+        using ReduceByKeyTileState = ReduceByKey::ScanTileState;
+        Buffer<ReduceByKeyTileState> tile_states =
+            m_device.create_buffer<ReduceByKeyTileState>(details::WARP_SIZE + num_tiles);
+
+        reduce_by_key_array<KeyType, ValueType, ReduceByKeyTileState>(
+            cmdlist,
+            tile_states.view(),
+            d_keys_in,
+            d_values_in,
+            d_unique_out,
+            g_aggregates_out,
+            g_num_runs_out,
+            reduce_op,
+            num_elements);
         stream << cmdlist.commit() << synchronize();
     }
 
 
-    template <NumericT Type4Byte,
-              typename ReduceOp = luisa::compute::Callable<Var<Type4Byte>(const Var<Type4Byte>&, Var<Type4Byte>&)>,
-              typename TransfromOp>
+    template <NumericT Type4Byte, typename ReduceOp, typename TransfromOp>
     void TransformReduce(CommandList&          cmdlist,
-                         BufferView<Type4Byte> temp_buffer,
+                         Stream&               stream,
                          BufferView<Type4Byte> d_in,
                          BufferView<Type4Byte> d_out,
                          size_t                num_item,
@@ -287,6 +300,12 @@ class DeviceReduce : public LuisaModule
                          TransfromOp           transform_op,
                          Type4Byte             init)
     {
+        size_t temp_storage_size = 0;
+        get_temp_size_scan(temp_storage_size, m_block_size, ITEMS_PER_THREAD, num_item);
+        Buffer<Type4Byte> temp_buffer = m_device.create_buffer<Type4Byte>(temp_storage_size);
+        // reduce_array_recursive<Type4Byte>(
+        //     cmdlist, temp_buffer.view(), d_in, d_out, num_item, 0, 0, reduce_op, init);
+        stream << cmdlist.commit() << synchronize();
     }
 
   private:
@@ -338,7 +357,7 @@ class DeviceReduce : public LuisaModule
             std::move(ms_arg_assign_shader));
     }
 
-    template <details::NumericTOrKeyValuePairT Type, typename ReduceOp>
+    template <NumericTOrKeyValuePairT Type, typename ReduceOp>
     void reduce_array_recursive(luisa::compute::CommandList& cmdlist,
                                 BufferView<Type>             temp_storage,
                                 BufferView<Type>             arr_in,
@@ -346,14 +365,14 @@ class DeviceReduce : public LuisaModule
                                 int                          num_elements,
                                 int                          offset,
                                 int                          level,
-                                ReduceOp                     op,
+                                ReduceOp                     reduce_op,
                                 Type                         init) noexcept
     {
-        int num_blocks =
+        int num_tiles =
             imax(1, (int)ceil((float)num_elements / (ITEMS_PER_THREAD * m_block_size)));
         int num_threads;
 
-        if(num_blocks > 1)
+        if(num_tiles > 1)
         {
             num_threads = m_block_size;
         }
@@ -367,7 +386,7 @@ class DeviceReduce : public LuisaModule
         }
 
         int num_elements_per_block = num_threads * ITEMS_PER_THREAD;
-        int num_elements_last_block = num_elements - (num_blocks - 1) * num_elements_per_block;
+        int num_elements_last_block = num_elements - (num_tiles - 1) * num_elements_per_block;
         int num_threads_last_block = imax(1, num_elements_last_block);
         int np2_last_block         = 0;
         int shared_mem_last_block  = 0;
@@ -381,33 +400,34 @@ class DeviceReduce : public LuisaModule
                 num_threads_last_block = floor_pow_2(num_elements_last_block);
             }
         }
+        using ReduceShader = details::ReduceShader<Type, BLOCK_SIZE, ITEMS_PER_THREAD>;
+        using ReduceKernel = ReduceShader::ReduceShaderKernel;
+
         size_t size_elements = temp_storage.size() - offset;
         BufferView<Type> temp_buffer_level = temp_storage.subview(offset, size_elements);
-        auto key          = get_reduce_type_op_desc<Type>(op);
+
+        auto key          = get_reduce_type_op_desc<Type>(reduce_op);
         auto ms_reduce_it = ms_reduce_map.find(key);
         if(ms_reduce_it == ms_reduce_map.end())
         {
-            auto shader =
-                details::ReduceShader<Type, BLOCK_SIZE, ITEMS_PER_THREAD>().compile(
-                    m_device, m_shared_mem_size, op);
+            LUISA_INFO("Compiling Reduce shader for key: {}", key);
+            auto shader = ReduceShader().compile(m_device, m_shared_mem_size, reduce_op);
             ms_reduce_map.try_emplace(key, std::move(shader));
             ms_reduce_it = ms_reduce_map.find(key);
         }
-        auto ms_reduce_ptr =
-            reinterpret_cast<details::ReduceShaderT<Type>*>(&(*ms_reduce_it->second));
+        auto ms_reduce_ptr = reinterpret_cast<ReduceKernel*>(&(*ms_reduce_it->second));
 
-        if(num_blocks > 1)
+        if(num_tiles > 1)
         {
             cmdlist << (*ms_reduce_ptr)(arr_in, temp_buffer_level, num_elements, 0, 0, init)
-                           .dispatch(m_block_size * (num_blocks - np2_last_block));
-
+                           .dispatch(m_block_size * (num_tiles - np2_last_block));
             if(np2_last_block)
             {
                 // Last Block
                 cmdlist << (*ms_reduce_ptr)(arr_in,
                                             temp_buffer_level,
                                             num_elements_last_block,
-                                            num_blocks - 1,
+                                            num_tiles - 1,
                                             num_elements - num_elements_last_block,
                                             init)
                                .dispatch(m_block_size);
@@ -417,10 +437,10 @@ class DeviceReduce : public LuisaModule
                                          temp_buffer_level,
                                          temp_buffer_level,
                                          arr_out,
-                                         num_blocks,
-                                         num_blocks,
+                                         num_tiles,
+                                         num_tiles,
                                          level + 1,
-                                         op,
+                                         reduce_op,
                                          init);
         }
         else
@@ -432,21 +452,22 @@ class DeviceReduce : public LuisaModule
         }
     };
 
-    template <NumericT KeyType, NumericT ValueType, typename ReduceOp>
-    void reduce_by_key_array(CommandList&          cmdlist,
-                             BufferView<KeyType>   keys_in,
-                             BufferView<ValueType> values_in,
-                             BufferView<KeyType>   unique_out,
-                             BufferView<ValueType> aggregated_out,
-                             BufferView<uint>      num_runs_out,
-                             ReduceOp              reduce_op,
-                             int                   num_elements) noexcept
+    template <NumericT KeyType, NumericT ValueType, typename ScanTileState, typename ReduceOp>
+    void reduce_by_key_array(luisa::compute::CommandList& cmdlist,
+                             BufferView<ScanTileState>    tile_states,
+                             BufferView<KeyType>          keys_in,
+                             BufferView<ValueType>        values_in,
+                             BufferView<KeyType>          unique_out,
+                             BufferView<ValueType>        aggregated_out,
+                             BufferView<uint>             num_runs_out,
+                             ReduceOp                     reduce_op,
+                             int                          num_elements) noexcept
     {
-        int num_blocks =
+        int num_tiles =
             imax(1, (int)ceil((float)num_elements / (ITEMS_PER_THREAD * m_block_size)));
         int num_threads;
 
-        if(num_blocks > 1)
+        if(num_tiles > 1)
         {
             num_threads = m_block_size;
         }
@@ -460,11 +481,10 @@ class DeviceReduce : public LuisaModule
         }
 
         int num_elements_per_block = num_threads * ITEMS_PER_THREAD;
-        int num_elements_last_block = num_elements - (num_blocks - 1) * num_elements_per_block;
+        int num_elements_last_block = num_elements - (num_tiles - 1) * num_elements_per_block;
         int num_threads_last_block = imax(1, num_elements_last_block);
         int np2_last_block         = 0;
         int shared_mem_last_block  = 0;
-
         if(num_elements_last_block != num_elements_per_block)
         {
             // NOT POWER OF 2
@@ -475,27 +495,43 @@ class DeviceReduce : public LuisaModule
             }
         }
 
-        // Initialize output counter
-        std::vector<uint> zero_data(1, 0);
-        cmdlist << num_runs_out.copy_from(zero_data.data());
-        // execute the scan
+        using ReduceByKey =
+            details::ReduceByKeyModule<KeyType, ValueType, BLOCK_SIZE, ITEMS_PER_THREAD>;
+        using ReduceByKeyTileState = ReduceByKey::ScanTileState;
+        using ReduceByKeyTileStateInitKernel = ReduceByKey::ScanTileStateInitKernel;
+        using ReduceByKeyKernel1D = ReduceByKey::ReduceByKeyKernel;
+
+        // init
+        size_t init_num_blocks = ceil(float(num_tiles) / BLOCK_SIZE);
+        auto   init_key = get_key_value_shader_desc<KeyType, ValueType>();
+        auto ms_scan_tile_state_init_it = ms_scan_tile_state_init_map.find(init_key);
+        if(ms_scan_tile_state_init_it == ms_scan_tile_state_init_map.end())
+        {
+            auto shader = ReduceByKey().compile_scan_tile_state_init(m_device);
+            ms_scan_tile_state_init_map.try_emplace(init_key, std::move(shader));
+            ms_scan_tile_state_init_it = ms_scan_tile_state_init_map.find(init_key);
+        }
+        auto ms_scan_tile_state_init_ptr =
+            reinterpret_cast<ReduceByKeyTileStateInitKernel*>(
+                &(*ms_scan_tile_state_init_it->second));
+        cmdlist << (*ms_scan_tile_state_init_ptr)(tile_states, num_tiles).dispatch(init_num_blocks);
+        // reduce by key
+
         auto key = get_key_value_op_shader_desc<KeyType, ValueType>(reduce_op);
         auto ms_reduce_by_key_it = ms_reduce_by_key_map.find(key);
         if(ms_reduce_by_key_it == ms_reduce_by_key_map.end())
         {
-            auto shader =
-                details::ReduceByKeyShader<KeyType, ValueType, BLOCK_SIZE, ITEMS_PER_THREAD>()
-                    .compile(m_device, m_shared_mem_size, reduce_op);
+            LUISA_INFO("Compiling ReduceByKey shader for key: {}", key);
+            auto shader = ReduceByKey().compile(m_device, m_shared_mem_size, reduce_op);
             ms_reduce_by_key_map.try_emplace(key, std::move(shader));
             ms_reduce_by_key_it = ms_reduce_by_key_map.find(key);
         }
         auto ms_reduce_by_key_ptr =
-            reinterpret_cast<details::ReduceByKeyShaderT<KeyType, ValueType>*>(
-                &(*ms_reduce_by_key_it->second));
+            reinterpret_cast<ReduceByKeyKernel1D*>(&(*ms_reduce_by_key_it->second));
 
         cmdlist << (*ms_reduce_by_key_ptr)(
-                       keys_in, values_in, unique_out, aggregated_out, num_runs_out, num_elements)
-                       .dispatch(m_block_size * num_blocks);
+                       tile_states, keys_in, values_in, unique_out, aggregated_out, num_runs_out, num_elements)
+                       .dispatch(m_block_size * num_tiles);
     };
 
 
@@ -527,6 +563,6 @@ class DeviceReduce : public LuisaModule
     luisa::unordered_map<luisa::string, luisa::shared_ptr<luisa::compute::Resource>> ms_arg_assign_map;
     // for reduce by key
     luisa::unordered_map<luisa::string, luisa::shared_ptr<luisa::compute::Resource>> ms_reduce_by_key_map;
-    luisa::unordered_map<luisa::string, luisa::shared_ptr<luisa::compute::Resource>> ms_partial_reduce_by_key_map;
+    luisa::unordered_map<luisa::string, luisa::shared_ptr<luisa::compute::Resource>> ms_scan_tile_state_init_map;
 };
 }  // namespace luisa::parallel_primitive

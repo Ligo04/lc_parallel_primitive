@@ -7,6 +7,7 @@
 
 
 #pragma once
+#include "luisa/core/basic_traits.h"
 #include <lcpp/common/type_trait.h>
 #include <luisa/dsl/struct.h>
 #include <typeindex>
@@ -39,15 +40,6 @@ luisa::string get_key_value_op_shader_desc(ReduceOp op)
     return luisa::string(key_desc) + "+" + luisa::string(value_desc) + "+"
            + std::type_index(typeid(op)).name();
 }
-}  // namespace luisa::parallel_primitive
-
-#define LUISA_KEY_VALUE_PAIR_TEMPLATE()                                        \
-    template <NumericT KeyType, NumericT ValueType>
-#define LUISA_KEY_VALUE_PAIR()                                                 \
-    luisa::parallel_primitive::KeyValuePair<KeyType, ValueType>
-
-LUISA_TEMPLATE_STRUCT(LUISA_KEY_VALUE_PAIR_TEMPLATE, LUISA_KEY_VALUE_PAIR, key, value){};
-
 
 template <typename T>
 struct is_key_value_pair : std::false_type
@@ -66,7 +58,6 @@ concept KeyValuePairType = is_key_value_pair<T>::value;
 template <typename T>
 struct value_type_of
 {
-    // 对于非 KeyValuePair 类型，可能没有值类型
 };
 
 template <typename K, typename V>
@@ -77,3 +68,15 @@ struct value_type_of<luisa::parallel_primitive::KeyValuePair<K, V>>
 
 template <typename T>
 using value_type_of_t = typename value_type_of<T>::type;
+template <typename T>
+concept NumericTOrKeyValuePairT = NumericT<T> || KeyValuePairType<T>;
+template <NumericT Type4Byte>
+using IndexValuePairT = KeyValuePair<luisa::uint, Type4Byte>;
+}  // namespace luisa::parallel_primitive
+
+#define LUISA_KEY_VALUE_PAIR_TEMPLATE()                                        \
+    template <NumericT KeyType, NumericT ValueType>
+#define LUISA_KEY_VALUE_PAIR()                                                 \
+    luisa::parallel_primitive::KeyValuePair<KeyType, ValueType>
+
+LUISA_TEMPLATE_STRUCT(LUISA_KEY_VALUE_PAIR_TEMPLATE, LUISA_KEY_VALUE_PAIR, key, value){};

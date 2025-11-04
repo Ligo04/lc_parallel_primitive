@@ -20,7 +20,7 @@ enum class BlockLoadAlgorithm
     BLOCK_LOAD_TRANSPOSE = 1
 };
 
-template <typename Type4Byte, size_t BlockSize = 256, size_t ITEMS_PER_THREAD = 2, BlockLoadAlgorithm DefaultLoadAlgorithm = BlockLoadAlgorithm::BLOCK_LOAD_DIRECT>
+template <typename Type4Byte, size_t BlockSize = details::BLOCK_SIZE, size_t ITEMS_PER_THREAD = 2, BlockLoadAlgorithm DefaultLoadAlgorithm = BlockLoadAlgorithm::BLOCK_LOAD_DIRECT>
 class BlockLoad : public LuisaModule
 {
   public:

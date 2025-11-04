@@ -21,7 +21,11 @@ enum class BlockScanAlgorithm
     SHARED_MEMORY,
     WARP_SHUFFLE
 };
-template <typename Type4Byte, size_t BLOCK_SIZE = 256, size_t ITEMS_PER_THREAD = 2, size_t WARP_SIZE = 32, BlockScanAlgorithm DEFALUTE_ALGORITHNM = BlockScanAlgorithm::WARP_SHUFFLE>
+template <typename Type4Byte,
+          size_t BLOCK_SIZE       = details::BLOCK_SIZE,
+          size_t ITEMS_PER_THREAD = 2,
+          size_t WARP_SIZE        = details::WARP_SIZE,
+          BlockScanAlgorithm DEFALUTE_ALGORITHNM = BlockScanAlgorithm::WARP_SHUFFLE>
 class BlockScan : public LuisaModule
 {
   public:
@@ -92,6 +96,22 @@ class BlockScan : public LuisaModule
         };
     }
 
+    template <typename ScanOp, typename BlockPrefixCallbackOp>
+    void ExclusiveScan(const Var<Type4Byte>& thread_data,
+                       Var<Type4Byte>&       exclusive_out,
+                       ScanOp                scan_op,
+                       BlockPrefixCallbackOp prefix_op)
+    {
+        if(DEFALUTE_ALGORITHNM == BlockScanAlgorithm::WARP_SHUFFLE)
+        {
+            details::BlockScanShfl<Type4Byte, BLOCK_SIZE, WARP_SIZE>().ExclusiveScan(
+                m_shared_mem, thread_data, exclusive_out, scan_op, prefix_op);
+        }
+        else if(DEFALUTE_ALGORITHNM == BlockScanAlgorithm::SHARED_MEMORY)
+        {
+        };
+    }
+
 
     template <typename ScanOp>
     void ExclusiveScan(const compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& thread_datas,
@@ -128,7 +148,7 @@ class BlockScan : public LuisaModule
             else
             {
                 Var<Type4Byte> thread_aggregate =
-                    ThreadReduce<Type4Byte>().Reduce<ITEMS_PER_THREAD>(thread_datas, scan_op);
+                    ThreadReduce<Type4Byte, ITEMS_PER_THREAD>().Reduce(thread_datas, scan_op);
 
                 Var<Type4Byte> thread_output;
                 ExclusiveScan(thread_aggregate, thread_output, block_aggregate, scan_op);
@@ -155,13 +175,39 @@ class BlockScan : public LuisaModule
             else
             {
                 Var<Type4Byte> thread_aggregate =
-                    ThreadReduce<Type4Byte>().Reduce<ITEMS_PER_THREAD>(thread_datas, op);
+                    ThreadReduce<Type4Byte, ITEMS_PER_THREAD>().Reduce(thread_datas, op);
 
                 Var<Type4Byte> thread_output;
                 ExclusiveScan(thread_aggregate, thread_output, block_aggregate, op, initial_value);
 
                 ThreadScan<Type4Byte, ITEMS_PER_THREAD>().ThreadScanExclusive(
                     thread_datas, output_block_sums, op, thread_output, compute::thread_x() != 0u);
+            };
+        };
+    }
+
+    template <typename ScanOp, typename BlockPrefixCallbackOp>
+    void ExclusiveScan(const compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& thread_datas,
+                       compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& output_block_sums,
+                       ScanOp                scan_op,
+                       BlockPrefixCallbackOp prefix_op)
+    {
+        if(DEFALUTE_ALGORITHNM == BlockScanAlgorithm::WARP_SHUFFLE)
+        {
+            if(ITEMS_PER_THREAD == 1)
+            {
+                ExclusiveScan(thread_datas[0], output_block_sums[0], scan_op, prefix_op);
+            }
+            else
+            {
+                Var<Type4Byte> thread_aggregate =
+                    ThreadReduce<Type4Byte, ITEMS_PER_THREAD>().Reduce(thread_datas, scan_op);
+
+                Var<Type4Byte> thread_output;
+                ExclusiveScan(thread_aggregate, thread_output, scan_op, prefix_op);
+
+                ThreadScan<Type4Byte, ITEMS_PER_THREAD>().ThreadScanExclusive(
+                    thread_datas, output_block_sums, scan_op, thread_output, compute::thread_x() != 0u);
             };
         };
     }
@@ -214,7 +260,7 @@ class BlockScan : public LuisaModule
             else
             {
                 Var<Type4Byte> thread_aggregate =
-                    ThreadReduce<Type4Byte>().Reduce<ITEMS_PER_THREAD>(thread_datas, scan_op);
+                    ThreadReduce<Type4Byte, ITEMS_PER_THREAD>().Reduce(thread_datas, scan_op);
 
                 Var<Type4Byte> thread_output;
                 ExclusiveScan(thread_aggregate, thread_output, block_aggregate, scan_op);
@@ -242,7 +288,7 @@ class BlockScan : public LuisaModule
             else
             {
                 Var<Type4Byte> thread_aggregate =
-                    ThreadReduce<Type4Byte>().Reduce<ITEMS_PER_THREAD>(thread_datas, scan_op);
+                    ThreadReduce<Type4Byte, ITEMS_PER_THREAD>().Reduce(thread_datas, scan_op);
 
                 Var<Type4Byte> thread_output;
                 ExclusiveScan(thread_aggregate, thread_output, block_aggregate, scan_op, initial_value);

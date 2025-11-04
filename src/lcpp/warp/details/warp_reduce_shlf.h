@@ -7,8 +7,6 @@
 
 
 #pragma once
-#include "luisa/core/basic_traits.h"
-#include "luisa/dsl/stmt.h"
 #include <luisa/dsl/sugar.h>
 #include <luisa/dsl/func.h>
 #include <luisa/dsl/var.h>

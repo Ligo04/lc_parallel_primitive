@@ -17,10 +17,12 @@ namespace luisa::parallel_primitive
 namespace details
 {
     template <typename T>
+    using SmemType = luisa::compute::Shared<T>;
+    template <typename T>
     using SmemTypePtr = luisa::compute::Shared<T>*;
 
     using namespace luisa::compute;
-    template <typename Type4Byte, size_t BLOCK_SIZE = 256, size_t WARP_SIZE = 32>
+    template <typename Type4Byte, size_t BLOCK_SIZE = details::BLOCK_SIZE, size_t WARP_SIZE = 32>
     struct BlockScanShfl
     {
         template <typename ScanOp>
@@ -83,10 +85,9 @@ namespace details
                            const Var<Type4Byte>&   thread_data,
                            Var<Type4Byte>&         exclusive_output,
                            ScanOp                  scan_op,
-                           BlockPrefixCallbackT&   block_prefix_callback_op)
+                           BlockPrefixCallbackT    block_prefix_callback_op)
         {
-            SmemTypePtr<Type4Byte> shared_mem_block_prefix =
-                new SmemTypePtr<Type4Byte>{1};
+            SmemTypePtr<Type4Byte> shared_mem_block_prefix = new SmemType<Type4Byte>{1};
 
             Var<Type4Byte> block_aggregate;
             ExclusiveScan(m_shared_mem, thread_data, exclusive_output, block_aggregate, scan_op);
@@ -95,7 +96,7 @@ namespace details
             UInt lane_id = warp_lane_id();
             $if(warp_id == 0)
             {
-                Var<Type4Byte> block_prefix = block_prefix_callback_op(block_prefix);
+                Var<Type4Byte> block_prefix = block_prefix_callback_op(block_aggregate);
 
                 $if(lane_id == 0)
                 {
@@ -205,27 +206,6 @@ namespace details
 
             return warp_prefix;
         }
-
-        // template <uint WARP_ID, typename ScanOp>
-        // void ApplyWarpAggregate(SmemTypePtr<Type4Byte>& m_shared_mem,
-        //                         Var<Type4Byte>&         warp_prefix,
-        //                         Var<Type4Byte>&         block_aggregate,
-        //                         ScanOp                  scan_op)
-        // {
-        //     if constexpr(WARP_ID < WARP_SIZE)
-        //     {
-        //         UInt warp_curr_id = thread_id().x / warp_lane_count();
-        //         $if(warp_curr_id == WARP_ID)
-        //         {
-        //             warp_prefix = block_aggregate;
-        //         };
-
-        //         Var<Type4Byte> addend = (*m_shared_mem)[WARP_ID];
-        //         block_aggregate       = scan_op(block_aggregate, addend);
-
-        //         ApplyWarpAggregate<WARP_ID + 1>(m_shared_mem, warp_prefix, block_aggregate, scan_op);
-        //     }
-        // }
     };
 }  // namespace details
 }  // namespace luisa::parallel_primitive

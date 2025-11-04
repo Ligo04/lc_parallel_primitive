@@ -21,7 +21,7 @@ namespace details
     using SmemTypePtr = luisa::compute::Shared<T>*;
 
     using namespace luisa::compute;
-    template <typename Type4Byte, size_t BLOCK_SIZE = 256, size_t WARP_SIZE = 32>
+    template <typename Type4Byte, size_t BLOCK_SIZE = details::BLOCK_SIZE, size_t WARP_SIZE = details::WARP_SIZE>
 
     struct BlockReduceMem
     {

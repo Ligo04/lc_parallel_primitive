@@ -128,7 +128,7 @@ class WarpReduce : public LuisaModule
         Var<Type4Byte> result;
         if(WarpReduceMethod == WarpReduceAlgorithm::WARP_SHUFFLE)
         {
-            result = details::WarpReduceShfl<Type4Byte, WARP_SIZE>().SegmentReduce<false>(
+            result = details::WarpReduceShfl<Type4Byte, WARP_SIZE>().template SegmentReduce<false>(
                 d_in, flag, redecu_op, valid_item);
         };
         return result;
@@ -144,7 +144,7 @@ class WarpReduce : public LuisaModule
         Var<Type4Byte> result;
         if(WarpReduceMethod == WarpReduceAlgorithm::WARP_SHUFFLE)
         {
-            result = details::WarpReduceShfl<Type4Byte, WARP_SIZE>().SegmentReduce<false>(
+            result = details::WarpReduceShfl<Type4Byte, WARP_SIZE>().template SegmentReduce<false>(
                 d_in,
                 flag,
                 [](const Var<Type4Byte>& a, const Var<Type4Byte>& b) noexcept
