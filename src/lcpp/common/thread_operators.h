@@ -49,8 +49,8 @@ struct ArgMinOp
 
 struct IdentityOp
 {
-    template <NumericT DataType>
-    Var<DataType> operator()(const Var<DataType>& data) const noexcept
+    template <typename TypeData>
+    Var<TypeData> operator()(const Var<TypeData>& data) const noexcept
     {
         return data;
     }

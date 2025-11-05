@@ -7,6 +7,7 @@
 
 #pragma once
 #include "lcpp/common/type_trait.h"
+#include "luisa/dsl/stmt.h"
 #include <cstddef>
 #include <luisa/dsl/sugar.h>
 #include <luisa/dsl/func.h>
@@ -83,8 +84,11 @@ namespace details
         using ReduceShaderKernel =
             Shader<1, Buffer<DataType>, Buffer<DataType>, uint, uint, uint, DataType>;
 
-        template <typename ReduceOp>
-        U<ReduceShaderKernel> compile(Device& device, size_t shared_mem_size, ReduceOp reduce_op)
+        template <typename ReduceOp, typename TransformOp>
+        U<ReduceShaderKernel> compile(Device&     device,
+                                      size_t      shared_mem_size,
+                                      ReduceOp    reduce_op,
+                                      TransformOp transform_op)
         {
             // for reduce
             auto load_shared_chunk_from_mem = [&](SmemTypePtr<DataType>& s_data,
@@ -108,7 +112,13 @@ namespace details
                     };
 
                     Int bank_offset = conflict_free_offset(shared_idx);
-                    (*s_data)[shared_idx + bank_offset] = data;
+                    (*s_data)[shared_idx + bank_offset] = transform_op(data);
+                    // device_log("thid:{} ,shared_idx + bank_offset:{}, global_idx:{},s_data:{}, g_idata:{}",
+                    //            dispatch_id().x,
+                    //            shared_idx + bank_offset,
+                    //            global_idx,
+                    //            (*s_data)[shared_idx + bank_offset],
+                    //            data);
                 };
             };
 
