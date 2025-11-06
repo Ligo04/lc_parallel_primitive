@@ -49,9 +49,7 @@ namespace details
             lazy_compile(device,
                          ms_scan_tile_state_init_shader,
                          [](BufferVar<ScanTileState> tile_state, Int num_tiles) noexcept
-                         {
-                             ScanTileStateViewer::InitializeWardStatus(tile_state, num_tiles);
-                         });
+                         { ScanTileStateViewer::InitializeWardStatus(tile_state, num_tiles); });
 
             return ms_scan_tile_state_init_shader;
         }
@@ -64,14 +62,13 @@ namespace details
             using TilePrefixOpT =
                 TilePrefixCallbackOp<KeyValuePair<int, ValueType>, ReduceBySegmentOp<ReduceOp>>;
 
-            auto scatter =
-                [&](const ArrayVar<KeyValuePair<int, ValueType>, ITEMS_PER_THREAD> scatter_items,
-                    const ArrayVar<int, ITEMS_PER_THREAD> segment_flags,
-                    const ArrayVar<int, ITEMS_PER_THREAD> segment_indices,
-                    BufferVar<KeyType>&                   d_unique_out,
-                    BufferVar<ValueType>&                 d_aggregated_out,
-                    Int                                   num_tile_segment,
-                    Int                                   num_segments_prefix)
+            auto scatter = [&](const ArrayVar<KeyValuePair<int, ValueType>, ITEMS_PER_THREAD> scatter_items,
+                               const ArrayVar<int, ITEMS_PER_THREAD> segment_flags,
+                               const ArrayVar<int, ITEMS_PER_THREAD> segment_indices,
+                               BufferVar<KeyType>&                   d_unique_out,
+                               BufferVar<ValueType>&                 d_aggregated_out,
+                               Int                                   num_tile_segment,
+                               Int                                   num_segments_prefix)
             {
                 $if(Int(ITEMS_PER_THREAD) > 1 & num_tile_segment > Int(BLOCK_SIZE))
                 {
@@ -96,8 +93,7 @@ namespace details
                     Int item = thread_id().x;
                     $while(item < num_tile_segment)
                     {
-                        Var<KeyValuePair<KeyType, ValueType>> kvp =
-                            (*s_scatter_keys)[item];
+                        Var<KeyValuePair<KeyType, ValueType>> kvp = (*s_scatter_keys)[item];
                         d_unique_out.write(item + num_segments_prefix, kvp.key);
                         d_aggregated_out.write(item + num_segments_prefix, kvp.value);
                         item += Int(block_size_x());
@@ -110,10 +106,8 @@ namespace details
                     {
                         $if(segment_flags[item] == 1)
                         {
-                            d_unique_out.write(segment_indices[item],
-                                               scatter_items[item].key);
-                            d_aggregated_out.write(segment_indices[item],
-                                                   scatter_items[item].value);
+                            d_unique_out.write(segment_indices[item], scatter_items[item].key);
+                            d_aggregated_out.write(segment_indices[item], scatter_items[item].value);
                         };
                     };
                 };
@@ -142,10 +136,9 @@ namespace details
                     UInt num_remaining = num_item - tile_start;
                     Bool is_last_tile  = num_remaining <= tile_items;
 
-                    SmemTypePtr<KeyType> s_keys = new SmemType<KeyType>{shared_mem_size};
-                    SmemTypePtr<ValueType> s_values =
-                        new SmemType<ValueType>{shared_mem_size};
-                    SmemTypePtr<int> s_discontinutity = new SmemType<int>{shared_mem_size};
+                    SmemTypePtr<KeyType>   s_keys   = new SmemType<KeyType>{shared_mem_size};
+                    SmemTypePtr<ValueType> s_values = new SmemType<ValueType>{shared_mem_size};
+                    SmemTypePtr<int>       s_discontinutity = new SmemType<int>{shared_mem_size};
 
                     ArrayVar<KeyType, ITEMS_PER_THREAD>   local_keys;
                     ArrayVar<KeyType, ITEMS_PER_THREAD>   local_prev_keys;
@@ -156,15 +149,14 @@ namespace details
                     {
                         BlockLoad<KeyType, BLOCK_SIZE, ITEMS_PER_THREAD>(s_keys).Load(
                             keys_in, local_keys, tile_start, num_item - tile_start);
-                        BlockLoad<ValueType, BLOCK_SIZE, ITEMS_PER_THREAD>(s_values)
-                            .Load(values_in, local_values, tile_start, num_item - tile_start);
+                        BlockLoad<ValueType, BLOCK_SIZE, ITEMS_PER_THREAD>(s_values).Load(
+                            values_in, local_values, tile_start, num_item - tile_start);
                     }
                     $else
                     {
-                        BlockLoad<KeyType, BLOCK_SIZE, ITEMS_PER_THREAD>(s_keys).Load(
-                            keys_in, local_keys, tile_start);
-                        BlockLoad<ValueType, BLOCK_SIZE, ITEMS_PER_THREAD>(s_values)
-                            .Load(values_in, local_values, tile_start);
+                        BlockLoad<KeyType, BLOCK_SIZE, ITEMS_PER_THREAD>(s_keys).Load(keys_in, local_keys, tile_start);
+                        BlockLoad<ValueType, BLOCK_SIZE, ITEMS_PER_THREAD>(s_values).Load(
+                            values_in, local_values, tile_start);
                     };
 
                     // load per keys
@@ -185,8 +177,7 @@ namespace details
                         local_flags,
                         local_prev_keys,
                         local_keys,
-                        [&](const Var<KeyType>& a, const Var<KeyType>& b)
-                        { return a != b; },
+                        [&](const Var<KeyType>& a, const Var<KeyType>& b) { return a != b; },
                         tile_predecessor);
 
                     $if(thid == 0 & tile_id == 0)
@@ -200,15 +191,15 @@ namespace details
                         scan_items[item] = {local_flags[item], local_values[item]};
                     };
 
-                    Int                               num_segment_prefix = 0;
-                    Var<KeyValuePair<int, ValueType>> total_aggreagate{0, 0};
+                    Int                                                      num_segment_prefix = 0;
+                    Var<KeyValuePair<int, ValueType>>                        total_aggreagate{0, 0};
                     ArrayVar<KeyValuePair<int, ValueType>, ITEMS_PER_THREAD> scan_output;
-                    Var<KeyValuePair<int, ValueType>> block_aggregate{0, 0};
+                    Var<KeyValuePair<int, ValueType>>                        block_aggregate{0, 0};
 
                     $if(tile_id == 0)
                     {
-                        BlockScan<KeyValuePair<int, ValueType>, BLOCK_SIZE, ITEMS_PER_THREAD>()
-                            .ExclusiveScan(scan_items, scan_output, block_aggregate, scan_op);
+                        BlockScan<KeyValuePair<int, ValueType>, BLOCK_SIZE, ITEMS_PER_THREAD>().ExclusiveScan(
+                            scan_items, scan_output, block_aggregate, scan_op);
                         total_aggreagate   = block_aggregate;
                         num_segment_prefix = 0;
 
@@ -224,8 +215,8 @@ namespace details
                             new SmemType<TilePrefixTempStorage<KeyValuePair<int, ValueType>>>{1};
                         TilePrefixOpT prefix_op(tile_state, temp_storage, scan_op, tile_id);
 
-                        BlockScan<KeyValuePair<int, ValueType>, BLOCK_SIZE, ITEMS_PER_THREAD>()
-                            .ExclusiveScan(scan_items, scan_output, scan_op, prefix_op);
+                        BlockScan<KeyValuePair<int, ValueType>, BLOCK_SIZE, ITEMS_PER_THREAD>().ExclusiveScan(
+                            scan_items, scan_output, scan_op, prefix_op);
 
                         block_aggregate    = prefix_op.GetBlockAggregate();
                         num_segment_prefix = prefix_op.GetExclusivePrefix().key;
@@ -233,7 +224,7 @@ namespace details
                     };
 
                     ArrayVar<KeyValuePair<int, ValueType>, ITEMS_PER_THREAD> scatter_items;
-                    ArrayVar<int, ITEMS_PER_THREAD> scatter_indices;
+                    ArrayVar<int, ITEMS_PER_THREAD>                          scatter_indices;
                     for(auto item = 0u; item < ITEMS_PER_THREAD; ++item)
                     {
                         scatter_items[item].key   = local_prev_keys[item];
@@ -242,13 +233,7 @@ namespace details
                     };
 
                     Int num_tile_segments = block_aggregate.key;
-                    scatter(scatter_items,
-                            local_flags,
-                            scatter_indices,
-                            unique_out,
-                            aggregated_out,
-                            num_tile_segments,
-                            num_segment_prefix);
+                    scatter(scatter_items, local_flags, scatter_indices, unique_out, aggregated_out, num_tile_segments, num_segment_prefix);
 
                     // last tile and last thread
                     $if(is_last_tile & thread_id().x == block_size_x() - 1u)
@@ -256,8 +241,7 @@ namespace details
                         UInt num_segments = num_tile_segments + num_segment_prefix;
                         $if(num_remaining == tile_items)
                         {
-                            unique_out.write(num_segments,
-                                             local_keys[ITEMS_PER_THREAD - 1]);
+                            unique_out.write(num_segments, local_keys[ITEMS_PER_THREAD - 1]);
                             aggregated_out.write(num_segments, total_aggreagate.value);
                             num_segments += 1;
                         };

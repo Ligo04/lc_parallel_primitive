@@ -21,11 +21,7 @@ enum class BlockScanAlgorithm
     SHARED_MEMORY,
     WARP_SHUFFLE
 };
-template <typename Type4Byte,
-          size_t BLOCK_SIZE       = details::BLOCK_SIZE,
-          size_t ITEMS_PER_THREAD = 2,
-          size_t WARP_SIZE        = details::WARP_SIZE,
-          BlockScanAlgorithm DEFALUTE_ALGORITHNM = BlockScanAlgorithm::WARP_SHUFFLE>
+template <typename Type4Byte, size_t BLOCK_SIZE = details::BLOCK_SIZE, size_t ITEMS_PER_THREAD = 2, size_t WARP_SIZE = details::WARP_SIZE, BlockScanAlgorithm DEFALUTE_ALGORITHNM = BlockScanAlgorithm::WARP_SHUFFLE>
 class BlockScan : public LuisaModule
 {
   public:
@@ -83,7 +79,7 @@ class BlockScan : public LuisaModule
                        Var<Type4Byte>&       exclusive_output,
                        Var<Type4Byte>&       block_aggregate,
                        ScanOp                scan_op,
-                       Var<Type4Byte>        initial_value)
+                       const Var<Type4Byte>& initial_value)
     {
 
         if(DEFALUTE_ALGORITHNM == BlockScanAlgorithm::WARP_SHUFFLE)
@@ -97,10 +93,7 @@ class BlockScan : public LuisaModule
     }
 
     template <typename ScanOp, typename BlockPrefixCallbackOp>
-    void ExclusiveScan(const Var<Type4Byte>& thread_data,
-                       Var<Type4Byte>&       exclusive_out,
-                       ScanOp                scan_op,
-                       BlockPrefixCallbackOp prefix_op)
+    void ExclusiveScan(const Var<Type4Byte>& thread_data, Var<Type4Byte>& exclusive_out, ScanOp scan_op, BlockPrefixCallbackOp prefix_op)
     {
         if(DEFALUTE_ALGORITHNM == BlockScanAlgorithm::WARP_SHUFFLE)
         {
@@ -115,8 +108,8 @@ class BlockScan : public LuisaModule
 
     template <typename ScanOp>
     void ExclusiveScan(const compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& thread_datas,
-                       compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& output_block_sums,
-                       ScanOp scan_op)
+                       compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>&       output_block_sums,
+                       ScanOp                                                scan_op)
     {
         Var<Type4Byte> block_aggregate;
         ExclusiveScan(thread_datas, output_block_sums, block_aggregate, scan_op);
@@ -124,9 +117,9 @@ class BlockScan : public LuisaModule
 
     template <typename ScanOp>
     void ExclusiveScan(const compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& thread_datas,
-                       compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& output_block_sums,
-                       ScanOp         scan_op,
-                       Var<Type4Byte> initial_value)
+                       compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>&       output_block_sums,
+                       ScanOp                                                scan_op,
+                       Var<Type4Byte>                                        initial_value)
     {
         Var<Type4Byte> block_aggregate;
         ExclusiveScan(thread_datas, output_block_sums, block_aggregate, scan_op, initial_value);
@@ -135,9 +128,9 @@ class BlockScan : public LuisaModule
 
     template <typename ScanOp>
     void ExclusiveScan(const compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& thread_datas,
-                       compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& exclusive_output,
-                       Var<Type4Byte>& block_aggregate,
-                       ScanOp          scan_op)
+                       compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>&       exclusive_output,
+                       Var<Type4Byte>&                                       block_aggregate,
+                       ScanOp                                                scan_op)
     {
         if(DEFALUTE_ALGORITHNM == BlockScanAlgorithm::WARP_SHUFFLE)
         {
@@ -161,36 +154,36 @@ class BlockScan : public LuisaModule
 
     template <typename ScanOp>
     void ExclusiveScan(const compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& thread_datas,
-                       compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& output_block_sums,
-                       Var<Type4Byte>& block_aggregate,
-                       ScanOp          op,
-                       Var<Type4Byte>  initial_value)
+                       compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>&       output_block_sums,
+                       Var<Type4Byte>&                                       block_aggregate,
+                       ScanOp                                                scan_op,
+                       Var<Type4Byte>                                        initial_value)
     {
         if(DEFALUTE_ALGORITHNM == BlockScanAlgorithm::WARP_SHUFFLE)
         {
             if(ITEMS_PER_THREAD == 1)
             {
-                ExclusiveScan(thread_datas[0], output_block_sums[0], block_aggregate, op, initial_value);
+                ExclusiveScan(thread_datas[0], output_block_sums[0], block_aggregate, scan_op, initial_value);
             }
             else
             {
                 Var<Type4Byte> thread_aggregate =
-                    ThreadReduce<Type4Byte, ITEMS_PER_THREAD>().Reduce(thread_datas, op);
+                    ThreadReduce<Type4Byte, ITEMS_PER_THREAD>().Reduce(thread_datas, scan_op);
 
                 Var<Type4Byte> thread_output;
-                ExclusiveScan(thread_aggregate, thread_output, block_aggregate, op, initial_value);
+                ExclusiveScan(thread_aggregate, thread_output, block_aggregate, scan_op, initial_value);
 
                 ThreadScan<Type4Byte, ITEMS_PER_THREAD>().ThreadScanExclusive(
-                    thread_datas, output_block_sums, op, thread_output, compute::thread_x() != 0u);
+                    thread_datas, output_block_sums, scan_op, thread_output, compute::thread_x() != 0u);
             };
         };
     }
 
     template <typename ScanOp, typename BlockPrefixCallbackOp>
     void ExclusiveScan(const compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& thread_datas,
-                       compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& output_block_sums,
-                       ScanOp                scan_op,
-                       BlockPrefixCallbackOp prefix_op)
+                       compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>&       output_block_sums,
+                       ScanOp                                                scan_op,
+                       BlockPrefixCallbackOp                                 prefix_op)
     {
         if(DEFALUTE_ALGORITHNM == BlockScanAlgorithm::WARP_SHUFFLE)
         {
@@ -207,7 +200,7 @@ class BlockScan : public LuisaModule
                 ExclusiveScan(thread_aggregate, thread_output, scan_op, prefix_op);
 
                 ThreadScan<Type4Byte, ITEMS_PER_THREAD>().ThreadScanExclusive(
-                    thread_datas, output_block_sums, scan_op, thread_output, compute::thread_x() != 0u);
+                    thread_datas, output_block_sums, scan_op, thread_output);
             };
         };
     }
@@ -235,11 +228,41 @@ class BlockScan : public LuisaModule
         };
     }
 
+    template <typename ScanOp>
+    void InclusiveScan(const Var<Type4Byte>& thread_data,
+                       Var<Type4Byte>&       inclusive_out,
+                       Var<Type4Byte>&       block_aggregate,
+                       ScanOp                scan_op,
+                       Var<Type4Byte>        initial_value)
+    {
+        if(DEFALUTE_ALGORITHNM == BlockScanAlgorithm::WARP_SHUFFLE)
+        {
+            details::BlockScanShfl<Type4Byte, BLOCK_SIZE, WARP_SIZE>().InclusiveScan(
+                m_shared_mem, thread_data, inclusive_out, block_aggregate, scan_op, initial_value);
+        }
+        else if(DEFALUTE_ALGORITHNM == BlockScanAlgorithm::SHARED_MEMORY)
+        {
+        };
+    }
+
+
+    template <typename ScanOp, typename BlockPrefixCallbackOp>
+    void InclusiveScan(const Var<Type4Byte>& thread_data, Var<Type4Byte>& inclusive_out, ScanOp scan_op, BlockPrefixCallbackOp prefix_op)
+    {
+        if(DEFALUTE_ALGORITHNM == BlockScanAlgorithm::WARP_SHUFFLE)
+        {
+            details::BlockScanShfl<Type4Byte, BLOCK_SIZE, WARP_SIZE>().InclusiveScan(
+                m_shared_mem, thread_data, inclusive_out, scan_op, prefix_op);
+        }
+        else if(DEFALUTE_ALGORITHNM == BlockScanAlgorithm::SHARED_MEMORY)
+        {
+        };
+    }
 
     template <typename ScanOp>
     void InclusiveScan(const compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& thread_datas,
-                       compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& inclusive_out,
-                       ScanOp scan_op)
+                       compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>&       inclusive_out,
+                       ScanOp                                                scan_op)
     {
         Var<Type4Byte> block_aggregate;
         InclusiveScan(thread_datas, inclusive_out, block_aggregate, scan_op);
@@ -247,9 +270,9 @@ class BlockScan : public LuisaModule
 
     template <typename ScanOp>
     void InclusiveScan(const compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& thread_datas,
-                       compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& inclusive_out,
-                       Var<Type4Byte>& block_aggregate,
-                       ScanOp          scan_op)
+                       compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>&       inclusive_out,
+                       Var<Type4Byte>&                                       block_aggregate,
+                       ScanOp                                                scan_op)
     {
         if(DEFALUTE_ALGORITHNM == BlockScanAlgorithm::WARP_SHUFFLE)
         {
@@ -274,10 +297,10 @@ class BlockScan : public LuisaModule
 
     template <typename ScanOp>
     void InclusiveScan(const compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& thread_datas,
-                       compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& output_block_sums,
-                       Var<Type4Byte>& block_aggregate,
-                       ScanOp          scan_op,
-                       Var<Type4Byte>  initial_value)
+                       compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>&       output_block_sums,
+                       Var<Type4Byte>&                                       block_aggregate,
+                       ScanOp                                                scan_op,
+                       Var<Type4Byte>                                        initial_value)
     {
         if(DEFALUTE_ALGORITHNM == BlockScanAlgorithm::WARP_SHUFFLE)
         {
@@ -299,50 +322,70 @@ class BlockScan : public LuisaModule
         };
     }
 
+    template <typename ScanOp, typename BlockPrefixCallbackOp>
+    void InclusiveScan(const compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& thread_datas,
+                       compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>&       output_block_sums,
+                       ScanOp                                                scan_op,
+                       BlockPrefixCallbackOp                                 prefix_op)
+    {
+        if(DEFALUTE_ALGORITHNM == BlockScanAlgorithm::WARP_SHUFFLE)
+        {
+            if(ITEMS_PER_THREAD == 1)
+            {
+                InclusiveScan(thread_datas[0], output_block_sums[0], scan_op, prefix_op);
+            }
+            else
+            {
+                Var<Type4Byte> thread_aggregate =
+                    ThreadReduce<Type4Byte, ITEMS_PER_THREAD>().Reduce(thread_datas, scan_op);
+
+                Var<Type4Byte> thread_output;
+                ExclusiveScan(thread_aggregate, thread_output, scan_op, prefix_op);
+
+                ThreadScan<Type4Byte, ITEMS_PER_THREAD>().ThreadScanInclusive(
+                    thread_datas, output_block_sums, scan_op, thread_output);
+            };
+        };
+    }
+
     // sum
     void ExclusiveSum(const Var<Type4Byte>& thread_data, Var<Type4Byte>& exclusive_out)
     {
         return ExclusiveScan(
             thread_data,
             exclusive_out,
-            [](const Var<Type4Byte>& a, const Var<Type4Byte>& b)
-            { return a + b; },
+            [](const Var<Type4Byte>& a, const Var<Type4Byte>& b) { return a + b; },
             Type4Byte(0));
     }
-    void ExclusiveSum(const Var<Type4Byte>& thread_data,
-                      Var<Type4Byte>&       exclusive_out,
-                      Var<Type4Byte>&       block_aggregate)
+    void ExclusiveSum(const Var<Type4Byte>& thread_data, Var<Type4Byte>& exclusive_out, Var<Type4Byte>& block_aggregate)
     {
         return ExclusiveScan(
             thread_data,
             exclusive_out,
             block_aggregate,
-            [](const Var<Type4Byte>& a, const Var<Type4Byte>& b)
-            { return a + b; },
+            [](const Var<Type4Byte>& a, const Var<Type4Byte>& b) { return a + b; },
             Type4Byte(0));
     }
 
     void ExclusiveSum(const compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& thread_data,
-                      compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& exclusive_out)
+                      compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>&       exclusive_out)
     {
         return ExclusiveScan(
             thread_data,
             exclusive_out,
-            [](const Var<Type4Byte>& a, const Var<Type4Byte>& b)
-            { return a + b; },
+            [](const Var<Type4Byte>& a, const Var<Type4Byte>& b) { return a + b; },
             Type4Byte(0));
     }
 
     void ExclusiveSum(const compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& thread_data,
-                      compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& exclusive_out,
-                      Var<Type4Byte>& block_aggregate)
+                      compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>&       exclusive_out,
+                      Var<Type4Byte>&                                       block_aggregate)
     {
         return ExclusiveScan(
             thread_data,
             exclusive_out,
             block_aggregate,
-            [](const Var<Type4Byte>& a, const Var<Type4Byte>& b)
-            { return a + b; },
+            [](const Var<Type4Byte>& a, const Var<Type4Byte>& b) { return a + b; },
             Type4Byte(0));
     }
 
@@ -350,39 +393,33 @@ class BlockScan : public LuisaModule
     {
         return InclusiveScan(thread_data,
                              inclusive_out,
-                             [](const Var<Type4Byte>& a, const Var<Type4Byte>& b)
-                             { return a + b; });
+                             [](const Var<Type4Byte>& a, const Var<Type4Byte>& b) { return a + b; });
     }
 
-    void InclusiveSum(const Var<Type4Byte>& thread_data,
-                      Var<Type4Byte>&       inclusive_out,
-                      Var<Type4Byte>&       block_aggregate)
+    void InclusiveSum(const Var<Type4Byte>& thread_data, Var<Type4Byte>& inclusive_out, Var<Type4Byte>& block_aggregate)
     {
         return InclusiveScan(thread_data,
                              inclusive_out,
                              block_aggregate,
-                             [](const Var<Type4Byte>& a, const Var<Type4Byte>& b)
-                             { return a + b; });
+                             [](const Var<Type4Byte>& a, const Var<Type4Byte>& b) { return a + b; });
     }
 
     void InclusiveSum(const compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& thread_data,
-                      compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& inclusive_out)
+                      compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>&       inclusive_out)
     {
         return InclusiveScan(thread_data,
                              inclusive_out,
-                             [](const Var<Type4Byte>& a, const Var<Type4Byte>& b)
-                             { return a + b; });
+                             [](const Var<Type4Byte>& a, const Var<Type4Byte>& b) { return a + b; });
     }
 
     void InclusiveSum(const compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& thread_data,
-                      compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& inclusive_out,
-                      Var<Type4Byte>& block_aggregate)
+                      compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>&       inclusive_out,
+                      Var<Type4Byte>&                                       block_aggregate)
     {
         return InclusiveScan(thread_data,
                              inclusive_out,
                              block_aggregate,
-                             [](const Var<Type4Byte>& a, const Var<Type4Byte>& b)
-                             { return a + b; });
+                             [](const Var<Type4Byte>& a, const Var<Type4Byte>& b) { return a + b; });
     }
 
   private:

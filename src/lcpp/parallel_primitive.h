@@ -10,3 +10,4 @@
 #include <lcpp/block/block_reduce.h>
 #include <lcpp/block/block_scan.h>
 #include <lcpp/device/device_reduce.h>
+#include <lcpp/device/device_scan.h>

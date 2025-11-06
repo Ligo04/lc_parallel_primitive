@@ -2,11 +2,10 @@
  * @Author: Ligo 
  * @Date: 2025-10-21 23:03:40 
  * @Last Modified by: Ligo
- * @Last Modified time: 2025-10-22 23:55:23
+ * @Last Modified time: 2025-11-06 14:31:03
  */
 
 #pragma once
-#include "lcpp/common/type_trait.h"
 #include "luisa/dsl/stmt.h"
 #include <cstddef>
 #include <luisa/dsl/sugar.h>
@@ -16,6 +15,7 @@
 #include <lcpp/common/keyvaluepair.h>
 #include <lcpp/common/utils.h>
 #include <lcpp/common/thread_operators.h>
+#include <lcpp/common/type_trait.h>
 #include <lcpp/runtime/core.h>
 
 namespace luisa::parallel_primitive
@@ -24,13 +24,11 @@ namespace details
 {
     using namespace luisa::compute;
 
-
     template <NumericT Type4Byte, size_t BLOCK_SIZE = details::BLOCK_SIZE>
     class ArgReduce : public LuisaModule
     {
       public:
-        using ArgConstructShaderT =
-            Shader<1, Buffer<Type4Byte>, Buffer<IndexValuePairT<Type4Byte>>>;
+        using ArgConstructShaderT = Shader<1, Buffer<Type4Byte>, Buffer<IndexValuePairT<Type4Byte>>>;
 
         using ArgAssignShaderT =
             Shader<1, Buffer<IndexValuePairT<Type4Byte>>, Buffer<Type4Byte>, Buffer<uint>>;
@@ -40,12 +38,10 @@ namespace details
             U<ArgConstructShaderT> ms_arg_construct_shader = nullptr;
             lazy_compile(device,
                          ms_arg_construct_shader,
-                         [&](BufferVar<Type4Byte>                  arr_in,
-                             BufferVar<IndexValuePairT<Type4Byte>> g_kv_out)
+                         [&](BufferVar<Type4Byte> arr_in, BufferVar<IndexValuePairT<Type4Byte>> g_kv_out)
                          {
                              set_block_size(BLOCK_SIZE);
-                             Int global_id =
-                                 Int(block_id().x * block_size().x + thread_id().x);
+                             Int global_id = Int(block_id().x * block_size().x + thread_id().x);
 
                              Var<IndexValuePairT<Type4Byte>> initial{0, 0};
                              initial.key   = global_id;
@@ -65,8 +61,7 @@ namespace details
                              BufferVar<uint>                       index_out)
                          {
                              set_block_size(BLOCK_SIZE);
-                             UInt global_id = UInt(block_id().x * block_size().x
-                                                   + thread_id().x);
+                             UInt global_id = UInt(block_id().x * block_size().x + thread_id().x);
 
                              Var<IndexValuePairT<Type4Byte>> kvp = kvp_in.read(global_id);
                              index_out.write(global_id, kvp.key);
@@ -81,21 +76,17 @@ namespace details
     class ReduceShader : public LuisaModule
     {
       public:
-        using ReduceShaderKernel =
-            Shader<1, Buffer<DataType>, Buffer<DataType>, uint, uint, uint, DataType>;
+        using ReduceShaderKernel = Shader<1, Buffer<DataType>, Buffer<DataType>, uint, uint, uint, DataType>;
 
         template <typename ReduceOp, typename TransformOp>
-        U<ReduceShaderKernel> compile(Device&     device,
-                                      size_t      shared_mem_size,
-                                      ReduceOp    reduce_op,
-                                      TransformOp transform_op)
+        U<ReduceShaderKernel> compile(Device& device, size_t shared_mem_size, ReduceOp reduce_op, TransformOp transform_op)
         {
             // for reduce
             auto load_shared_chunk_from_mem = [&](SmemTypePtr<DataType>& s_data,
-                                                  BufferVar<DataType>& g_idata,
-                                                  UInt                 n,
-                                                  UInt          baseIndex,
-                                                  Var<DataType> initial_value)
+                                                  BufferVar<DataType>&   g_idata,
+                                                  UInt                   n,
+                                                  UInt                   baseIndex,
+                                                  Var<DataType>          initial_value)
             {
                 UInt thread_id_x = thread_id().x;
                 UInt block_id_x  = block_id().x;
@@ -111,20 +102,12 @@ namespace details
                         data = g_idata.read(global_idx);
                     };
 
-                    Int bank_offset = conflict_free_offset(shared_idx);
+                    Int bank_offset                     = conflict_free_offset(shared_idx);
                     (*s_data)[shared_idx + bank_offset] = transform_op(data);
-                    // device_log("thid:{} ,shared_idx + bank_offset:{}, global_idx:{},s_data:{}, g_idata:{}",
-                    //            dispatch_id().x,
-                    //            shared_idx + bank_offset,
-                    //            global_idx,
-                    //            (*s_data)[shared_idx + bank_offset],
-                    //            data);
                 };
             };
 
-            auto reduce_block = [&](SmemTypePtr<DataType>& s_data,
-                                    BufferVar<DataType>&   block_sums,
-                                    UInt                   block_index)
+            auto reduce_block = [&](SmemTypePtr<DataType>& s_data, BufferVar<DataType>& block_sums, UInt block_index)
             {
                 $if(block_index == 0)
                 {
@@ -177,15 +160,13 @@ namespace details
                              set_block_size(BLOCK_SIZE);
                              UInt                  block_id_x  = block_id().x;
                              UInt                  block_dim_x = block_size_x();
-                             SmemTypePtr<DataType> s_data =
-                                 new SmemType<DataType>{shared_mem_size};
+                             SmemTypePtr<DataType> s_data = new SmemType<DataType>{shared_mem_size};
 
                              $if(base_index == 0)
                              {
                                  base_index = block_id_x * (block_dim_x * UInt(ITEMS_PER_THREAD));
                              };
-                             load_shared_chunk_from_mem(
-                                 s_data, g_idata, num_elements, base_index, initial_value);
+                             load_shared_chunk_from_mem(s_data, g_idata, num_elements, base_index, initial_value);
                              reduce_block(s_data, g_block_sums, block_index);
                          });
 

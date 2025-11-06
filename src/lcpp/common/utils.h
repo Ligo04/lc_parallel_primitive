@@ -48,10 +48,56 @@ static inline int floor_pow_2(int n)
 #endif
 }
 
-static void get_temp_size_scan(size_t& temp_storage_size,
-                               size_t  m_block_size,
-                               size_t  items_per_thread,
-                               size_t  num_items)
+template <NumericT Type4Byte, typename ReduceOp>
+luisa::string get_type_and_op_desc(ReduceOp op)
+{
+    luisa::string_view key_desc       = luisa::compute::Type::of<Type4Byte>()->description();
+    luisa::string_view reduce_op_desc = std::type_index(typeid(op)).name();
+
+    return luisa::string(key_desc) + "+" + luisa::string(reduce_op_desc);
+}
+
+template <KeyValuePairType KeyValueType, typename ReduceOp>
+luisa::string get_type_and_op_desc(ReduceOp op)
+{
+    using ValueType                   = value_type_of_t<KeyValueType>;
+    luisa::string_view key_desc       = luisa::compute::Type::of<ValueType>()->description();
+    luisa::string_view reduce_op_desc = std::type_index(typeid(op)).name();
+
+    return luisa::string(key_desc) + "+" + luisa::string(reduce_op_desc);
+}
+
+template <typename KeyType, typename ValueType>
+luisa::string get_type_and_op_desc()
+{
+    luisa::string_view key_desc   = luisa::compute::Type::of<KeyType>()->description();
+    luisa::string_view value_desc = luisa::compute::Type::of<ValueType>()->description();
+
+    return luisa::string(key_desc) + "+" + luisa::string(value_desc);
+}
+
+template <typename KeyType, typename ValueType, typename ReduceOp>
+luisa::string get_type_and_op_desc(ReduceOp op)
+{
+    luisa::string_view key_desc   = luisa::compute::Type::of<KeyType>()->description();
+    luisa::string_view value_desc = luisa::compute::Type::of<ValueType>()->description();
+
+    return luisa::string(key_desc) + "+" + luisa::string(value_desc) + "+"
+           + std::type_index(typeid(op)).name();
+}
+
+template <NumericT Type4Byte, typename ReduceOp, typename TransformOp>
+luisa::string get_type_and_op_desc(ReduceOp op, TransformOp transform_op)
+{
+    luisa::string_view key_desc          = luisa::compute::Type::of<Type4Byte>()->description();
+    luisa::string_view reduce_op_desc    = std::type_index(typeid(op)).name();
+    luisa::string_view transform_op_desc = std::type_index(typeid(transform_op)).name();
+
+    return luisa::string(key_desc) + "+" + luisa::string(reduce_op_desc) + "+" + luisa::string(transform_op_desc);
+}
+
+
+static void get_temp_size_scan(size_t& temp_storage_size, size_t m_block_size, size_t items_per_thread, size_t num_items)
 {
     auto         block_size       = m_block_size;
     unsigned int max_num_elements = num_items;
@@ -61,8 +107,7 @@ static void get_temp_size_scan(size_t& temp_storage_size,
     do
     {
         // output segment size
-        unsigned int num_blocks =
-            imax(1, (int)ceil((float)num_elements / (items_per_thread * block_size)));
+        unsigned int num_blocks = imax(1, (int)ceil((float)num_elements / (items_per_thread * block_size)));
         if(num_blocks > 1)
         {
             level++;
@@ -81,12 +126,11 @@ static inline auto bit_log2(luisa::compute::UInt x)
 
 template <NumericT Type4Byte>
 luisa::compute::Var<Type4Byte> ShuffleUp(luisa::compute::Var<Type4Byte>& input,
-                                         luisa::compute::UInt curr_lane_id,
-                                         luisa::compute::UInt offset,
-                                         luisa::compute::UInt first_lane = 0u)
+                                         luisa::compute::UInt            curr_lane_id,
+                                         luisa::compute::UInt            offset,
+                                         luisa::compute::UInt            first_lane = 0u)
 {
-    luisa::compute::Var<Type4Byte> result =
-        compute::warp_read_lane(input, curr_lane_id - offset);
+    luisa::compute::Var<Type4Byte> result = compute::warp_read_lane(input, curr_lane_id - offset);
 
     $if(compute::Int(curr_lane_id - offset) < compute::Int(first_lane))
     {
@@ -97,14 +141,13 @@ luisa::compute::Var<Type4Byte> ShuffleUp(luisa::compute::Var<Type4Byte>& input,
 
 
 template <NumericT KeyType, NumericT ValueType>
-luisa::compute::Var<KeyValuePair<KeyType, ValueType>> ShuffleUp(
-    luisa::compute::Var<KeyValuePair<KeyType, ValueType>>& input,
-    luisa::compute::UInt                                   curr_lane_id,
-    luisa::compute::UInt                                   offset,
-    luisa::compute::UInt                                   first_lane = 0u)
+luisa::compute::Var<KeyValuePair<KeyType, ValueType>> ShuffleUp(luisa::compute::Var<KeyValuePair<KeyType, ValueType>>& input,
+                                                                luisa::compute::UInt curr_lane_id,
+                                                                luisa::compute::UInt offset,
+                                                                luisa::compute::UInt first_lane = 0u)
 {
     luisa::compute::Var<KeyValuePair<KeyType, ValueType>> result;
-    luisa::compute::UInt src_lane = curr_lane_id - offset;
+    luisa::compute::UInt                                  src_lane = curr_lane_id - offset;
     $if(src_lane >= first_lane)
     {
         result.key   = compute::warp_read_lane(input.key, src_lane);
@@ -119,12 +162,12 @@ luisa::compute::Var<KeyValuePair<KeyType, ValueType>> ShuffleUp(
 
 template <NumericT Type4Byte>
 luisa::compute::Var<Type4Byte> ShuffleDown(luisa::compute::Var<Type4Byte>& input,
-                                           luisa::compute::UInt curr_lane_id,
-                                           luisa::compute::UInt offset,
-                                           luisa::compute::UInt last_lane = 32u)
+                                           luisa::compute::UInt            curr_lane_id,
+                                           luisa::compute::UInt            offset,
+                                           luisa::compute::UInt            last_lane = 32u)
 {
-    luisa::compute::UInt src_lane = curr_lane_id + offset;
-    luisa::compute::Var<Type4Byte> result = compute::warp_read_lane(input, src_lane);
+    luisa::compute::UInt           src_lane = curr_lane_id + offset;
+    luisa::compute::Var<Type4Byte> result   = compute::warp_read_lane(input, src_lane);
     $if(src_lane > last_lane)
     {
         result = input;
@@ -134,14 +177,13 @@ luisa::compute::Var<Type4Byte> ShuffleDown(luisa::compute::Var<Type4Byte>& input
 
 
 template <NumericT KeyType, NumericT ValueType>
-luisa::compute::Var<KeyValuePair<KeyType, ValueType>> ShuffleDown(
-    luisa::compute::Var<KeyValuePair<KeyType, ValueType>>& input,
-    luisa::compute::UInt                                   curr_lane_id,
-    luisa::compute::UInt                                   offset,
-    luisa::compute::UInt                                   last_lane = 32u)
+luisa::compute::Var<KeyValuePair<KeyType, ValueType>> ShuffleDown(luisa::compute::Var<KeyValuePair<KeyType, ValueType>>& input,
+                                                                  luisa::compute::UInt curr_lane_id,
+                                                                  luisa::compute::UInt offset,
+                                                                  luisa::compute::UInt last_lane = 32u)
 {
     luisa::compute::Var<KeyValuePair<KeyType, ValueType>> result;
-    luisa::compute::UInt src_lane = curr_lane_id + offset;
+    luisa::compute::UInt                                  src_lane = curr_lane_id + offset;
     result.key   = compute::warp_read_lane(input.key, src_lane);
     result.value = compute::warp_read_lane(input.value, src_lane);
     $if(src_lane > last_lane)
@@ -157,8 +199,7 @@ inline luisa::compute::Int conflict_free_offset(luisa::compute::Int i)
     return i >> log_mem_banks;
 }
 
-inline luisa::compute::UInt get_lane_mask_ge(luisa::compute::UInt lane_id,
-                                             luisa::compute::UInt wave_size)
+inline luisa::compute::UInt get_lane_mask_ge(luisa::compute::UInt lane_id, luisa::compute::UInt wave_size)
 {
     luisa::compute::ULong mask64 = ~((1ull << lane_id) - 1ull);
     mask64 &= (1ull << wave_size) - 1ull;

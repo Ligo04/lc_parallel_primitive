@@ -22,25 +22,6 @@ struct KeyValuePair
 };
 
 
-template <typename KeyType, typename ValueType>
-luisa::string get_key_value_shader_desc()
-{
-    luisa::string_view key_desc = luisa::compute::Type::of<KeyType>()->description();
-    luisa::string_view value_desc = luisa::compute::Type::of<ValueType>()->description();
-
-    return luisa::string(key_desc) + "+" + luisa::string(value_desc);
-}
-
-template <typename KeyType, typename ValueType, typename ReduceOp>
-luisa::string get_key_value_op_shader_desc(ReduceOp op)
-{
-    luisa::string_view key_desc = luisa::compute::Type::of<KeyType>()->description();
-    luisa::string_view value_desc = luisa::compute::Type::of<ValueType>()->description();
-
-    return luisa::string(key_desc) + "+" + luisa::string(value_desc) + "+"
-           + std::type_index(typeid(op)).name();
-}
-
 template <typename T>
 struct is_key_value_pair : std::false_type
 {
@@ -74,9 +55,7 @@ template <NumericT Type4Byte>
 using IndexValuePairT = KeyValuePair<luisa::uint, Type4Byte>;
 }  // namespace luisa::parallel_primitive
 
-#define LUISA_KEY_VALUE_PAIR_TEMPLATE()                                        \
-    template <NumericT KeyType, NumericT ValueType>
-#define LUISA_KEY_VALUE_PAIR()                                                 \
-    luisa::parallel_primitive::KeyValuePair<KeyType, ValueType>
+#define LUISA_KEY_VALUE_PAIR_TEMPLATE() template <NumericT KeyType, NumericT ValueType>
+#define LUISA_KEY_VALUE_PAIR() luisa::parallel_primitive::KeyValuePair<KeyType, ValueType>
 
 LUISA_TEMPLATE_STRUCT(LUISA_KEY_VALUE_PAIR_TEMPLATE, LUISA_KEY_VALUE_PAIR, key, value){};

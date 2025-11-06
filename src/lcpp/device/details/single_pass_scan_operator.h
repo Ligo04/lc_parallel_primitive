@@ -60,8 +60,7 @@ struct ScanTileStateViewer
     constexpr static size_t TILE_STATUS_PADDING = details::WARP_SIZE;
 
     template <typename T>
-    static void InitializeWardStatus(compute::BufferVar<ScanTileState<T>>& tile_state,
-                                     compute::UInt num_tile) noexcept
+    static void InitializeWardStatus(compute::BufferVar<ScanTileState<T>>& tile_state, compute::UInt num_tile) noexcept
     {
 
         compute::UInt tile_idx = compute::dispatch_id().x;
@@ -71,21 +70,20 @@ struct ScanTileStateViewer
         $if(tile_idx < num_tile)
         {
             state.status = compute::def(StatusWordT(ScanTileStatus::SCAN_TILE_INVALID));
-            state.value = T(0);
+            state.value  = T(0);
             tile_state.write(compute::UInt(TILE_STATUS_PADDING) + tile_idx, state);
         };
         $if(compute::block_id().x == 0 & compute::thread_x() < compute::UInt(TILE_STATUS_PADDING))
         {
             state.status = compute::def(StatusWordT(ScanTileStatus::SCAN_TILE_OBB));
-            state.value = T(0);
+            state.value  = T(0);
             tile_state.write(compute::thread_x(), state);
         };
     };
 
     template <NumericT KeyType, NumericT ValueType>
-    static void InitializeWardStatus(
-        compute::BufferVar<ScanTileState<KeyValuePair<KeyType, ValueType>>>& tile_state,
-        compute::UInt num_tile) noexcept
+    static void InitializeWardStatus(compute::BufferVar<ScanTileState<KeyValuePair<KeyType, ValueType>>>& tile_state,
+                                     compute::UInt num_tile) noexcept
     {
 
         compute::UInt tile_idx = compute::dispatch_id().x;
@@ -95,13 +93,13 @@ struct ScanTileStateViewer
         $if(tile_idx < num_tile)
         {
             state.status = compute::def(StatusWordT(ScanTileStatus::SCAN_TILE_INVALID));
-            state.value = {KeyType(0), ValueType(0)};
+            state.value  = {KeyType(0), ValueType(0)};
             tile_state.write(compute::UInt(TILE_STATUS_PADDING) + tile_idx, state);
         };
         $if(compute::block_id().x == 0 & compute::thread_x() < compute::UInt(TILE_STATUS_PADDING))
         {
             state.status = compute::def(StatusWordT(ScanTileStatus::SCAN_TILE_OBB));
-            state.value = {KeyType(0), ValueType(0)};
+            state.value  = {KeyType(0), ValueType(0)};
             tile_state.write(compute::thread_x(), state);
         };
     };
@@ -109,7 +107,7 @@ struct ScanTileStateViewer
     template <typename T>
     static void SetInclusive(compute::BufferVar<ScanTileState<T>>& tile_state,
                              compute::UInt                         tile_index,
-                             const compute::Var<T>& tile_prefix) noexcept
+                             const compute::Var<T>&                tile_prefix) noexcept
     {
         compute::Var<ScanTileState<T>> state;
         state.status = StatusWordT(ScanTileStatus::SCAN_TILE_INCLUSIVE);
@@ -119,10 +117,9 @@ struct ScanTileStateViewer
 
 
     template <NumericT KeyType, NumericT ValueType>
-    static void SetInclusive(
-        compute::BufferVar<ScanTileState<KeyValuePair<KeyType, ValueType>>>& tile_state,
-        compute::UInt tile_index,
-        const compute::Var<KeyValuePair<KeyType, ValueType>>& tile_prefix) noexcept
+    static void SetInclusive(compute::BufferVar<ScanTileState<KeyValuePair<KeyType, ValueType>>>& tile_state,
+                             compute::UInt tile_index,
+                             const compute::Var<KeyValuePair<KeyType, ValueType>>& tile_prefix) noexcept
     {
         compute::Var<ScanTileState<KeyValuePair<KeyType, ValueType>>> state;
         state.status      = StatusWordT(ScanTileStatus::SCAN_TILE_INCLUSIVE);
@@ -134,7 +131,7 @@ struct ScanTileStateViewer
     template <typename T>
     static void SetPartial(compute::BufferVar<ScanTileState<T>>& tile_state,
                            compute::UInt                         tile_index,
-                           const compute::Var<T>& tile_partial) noexcept
+                           const compute::Var<T>&                tile_partial) noexcept
     {
         compute::Var<ScanTileState<T>> state;
         state.status = StatusWordT(ScanTileStatus::SCAN_TILE_PARTIAL);
@@ -159,16 +156,13 @@ struct ScanTileStateViewer
                              compute::Int                          tile_index,
                              compute::Var<StatusWordT>&            out_status,
                              compute::Var<T>&                      out_value,
-                             DelayT delay) noexcept
+                             DelayT                                delay) noexcept
     {
         compute::Var<ScanTileState<T>> curr_tile_state;
-        curr_tile_state =
-            tile_state.volatile_read(compute::Int(TILE_STATUS_PADDING) + tile_index);
-        $while(compute::warp_active_any(
-            curr_tile_state.status == StatusWordT(ScanTileStatus::SCAN_TILE_INVALID)))
+        curr_tile_state = tile_state.volatile_read(compute::Int(TILE_STATUS_PADDING) + tile_index);
+        $while(compute::warp_active_any(curr_tile_state.status == StatusWordT(ScanTileStatus::SCAN_TILE_INVALID)))
         {
-            curr_tile_state =
-                tile_state.volatile_read(compute::Int(TILE_STATUS_PADDING) + tile_index);
+            curr_tile_state = tile_state.volatile_read(compute::Int(TILE_STATUS_PADDING) + tile_index);
         };
 
         out_status = curr_tile_state.status;
@@ -177,19 +171,16 @@ struct ScanTileStateViewer
 
     template <NumericT KeyType, NumericT ValueType, typename DelayT>
     static void WaitForValid(compute::BufferVar<ScanTileState<KeyValuePair<KeyType, ValueType>>>& tile_state,
-                             compute::Int               tile_index,
-                             compute::Var<StatusWordT>& out_status,
+                             compute::Int                                    tile_index,
+                             compute::Var<StatusWordT>&                      out_status,
                              compute::Var<KeyValuePair<KeyType, ValueType>>& out_value,
-                             DelayT delay) noexcept
+                             DelayT                                          delay) noexcept
     {
         compute::Var<ScanTileState<KeyValuePair<KeyType, ValueType>>> curr_tile_state;
-        curr_tile_state =
-            tile_state.volatile_read(compute::Int(TILE_STATUS_PADDING) + tile_index);
-        $while(compute::warp_active_any(
-            curr_tile_state.status == StatusWordT(ScanTileStatus::SCAN_TILE_INVALID)))
+        curr_tile_state = tile_state.volatile_read(compute::Int(TILE_STATUS_PADDING) + tile_index);
+        $while(compute::warp_active_any(curr_tile_state.status == StatusWordT(ScanTileStatus::SCAN_TILE_INVALID)))
         {
-            curr_tile_state =
-                tile_state.volatile_read(compute::Int(TILE_STATUS_PADDING) + tile_index);
+            curr_tile_state = tile_state.volatile_read(compute::Int(TILE_STATUS_PADDING) + tile_index);
         };
 
         out_status      = curr_tile_state.status;
@@ -199,8 +190,8 @@ struct ScanTileStateViewer
 
     template <typename T>
     static compute::Var<T> LoadValid(compute::BufferVar<ScanTileState<T>>& tile_state,
-                                     compute::Int tile_index,
-                                     auto         delay) noexcept
+                                     compute::Int                          tile_index,
+                                     auto                                  delay) noexcept
     {
         auto state = tile_state.read(compute::Int(TILE_STATUS_PADDING) + tile_index);
         return state.value;
@@ -270,8 +261,7 @@ class TilePrefixCallbackOp : public LuisaModule
         exclusive_prefix = windows_aggregate;
 
         // warp(32) polling for predecessor tiles
-        $while(compute::warp_active_all(
-            predecessor_status != StatusWordT(ScanTileStatus::SCAN_TILE_INCLUSIVE)))
+        $while(compute::warp_active_all(predecessor_status != StatusWordT(ScanTileStatus::SCAN_TILE_INCLUSIVE)))
         {
             predecessor_idx -= compute::Int(details::WARP_SIZE);
             process_windows(predecessor_idx, predecessor_status, windows_aggregate, construct_delay());
@@ -308,20 +298,15 @@ class TilePrefixCallbackOp : public LuisaModule
 
   private:
     template <typename DeLayT>
-    void process_windows(compute::Int      predecessor_idx,
-                         Var<StatusWordT>& predecessor_status,
-                         Var<T>&           windows_aggregate,
-                         DeLayT            delay)
+    void process_windows(compute::Int predecessor_idx, Var<StatusWordT>& predecessor_status, Var<T>& windows_aggregate, DeLayT delay)
     {
         Var<T> value;
-        ScanTileStateViewer::WaitForValid(
-            tile_status, predecessor_idx, predecessor_status, value, delay);
+        ScanTileStateViewer::WaitForValid(tile_status, predecessor_idx, predecessor_status, value, delay);
 
-        compute::Int tail_flag =
-            predecessor_status == StatusWordT(ScanTileStatus::SCAN_TILE_INCLUSIVE);
+        compute::Int tail_flag = predecessor_status == StatusWordT(ScanTileStatus::SCAN_TILE_INCLUSIVE);
 
-        windows_aggregate = WarpReduceT().TailSegmentedReduce(
-            value, tail_flag, SwizzleScanOp<ScanOpT>(scan_op));
+        windows_aggregate =
+            WarpReduceT().TailSegmentedReduce(value, tail_flag, SwizzleScanOp<ScanOpT>(scan_op));
 
         // compute::device_log("process_windows: tile_index: {}, status: {}, value: {}, aggregate: {}",
         //                     tile_index,
@@ -335,15 +320,9 @@ class TilePrefixCallbackOp : public LuisaModule
 
 #define LUISA_T_TEMPLATE() template <typename U>
 
-#define LUISA_SCANTILESTATE_TRUE_NAME()                                        \
-    luisa::parallel_primitive::ScanTileState<U>
+#define LUISA_SCANTILESTATE_TRUE_NAME() luisa::parallel_primitive::ScanTileState<U>
 LUISA_TEMPLATE_STRUCT(LUISA_T_TEMPLATE, LUISA_SCANTILESTATE_TRUE_NAME, status, value){};
 
 
-#define LUISA_TILEPREFIXTEMPSTORAGE_NAME()                                     \
-    luisa::parallel_primitive::TilePrefixTempStorage<U>
-LUISA_TEMPLATE_STRUCT(LUISA_T_TEMPLATE,
-                      LUISA_TILEPREFIXTEMPSTORAGE_NAME,
-                      exclusive_prefix,
-                      inclusive_prefix,
-                      block_aggregate){};
+#define LUISA_TILEPREFIXTEMPSTORAGE_NAME() luisa::parallel_primitive::TilePrefixTempStorage<U>
+LUISA_TEMPLATE_STRUCT(LUISA_T_TEMPLATE, LUISA_TILEPREFIXTEMPSTORAGE_NAME, exclusive_prefix, inclusive_prefix, block_aggregate){};

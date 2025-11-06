@@ -16,13 +16,14 @@ namespace luisa::parallel_primitive
 {
 namespace details
 {
+    using namespace luisa::compute;
+
     template <typename T>
     using SmemType = luisa::compute::Shared<T>;
     template <typename T>
     using SmemTypePtr = luisa::compute::Shared<T>*;
 
-    using namespace luisa::compute;
-    template <typename Type4Byte, size_t BLOCK_SIZE = details::BLOCK_SIZE, size_t WARP_SIZE = 32>
+    template <typename Type4Byte, size_t BLOCK_SIZE = details::BLOCK_SIZE, size_t WARP_SIZE = details::WARP_SIZE>
     struct BlockScanShfl
     {
         template <typename ScanOp>
@@ -153,7 +154,35 @@ namespace details
             };
         }
 
+        template <typename ScanOp, typename BlockPrefixCallbackOp>
+        void InclusiveScan(SmemTypePtr<Type4Byte>& m_shared_mem,
+                           const Var<Type4Byte>&   thread_data,
+                           Var<Type4Byte>&         inclusive_output,
+                           ScanOp                  scan_op,
+                           BlockPrefixCallbackOp   prefix_op)
+        {
+            SmemTypePtr<Type4Byte> shared_mem_block_prefix = new SmemType<Type4Byte>{1};
+            Var<Type4Byte> block_aggregate;
+            InclusiveScan(m_shared_mem, thread_data, inclusive_output, block_aggregate, scan_op);
 
+            UInt warp_id = thread_id().x / warp_lane_count();
+            $if(warp_id == 0)
+            {
+                Var<Type4Byte> block_prefix = prefix_op(block_aggregate);
+                UInt           lane_id      = warp_lane_id();
+                $if(lane_id == 0)
+                {
+                    (*shared_mem_block_prefix)[0] = block_prefix;
+                };
+            };
+
+            sync_block();
+
+            Var<Type4Byte> block_prefix = (*shared_mem_block_prefix)[0];
+            inclusive_output = scan_op(block_prefix, inclusive_output);
+        }
+
+      private:
         template <typename ScanOp>
         Var<Type4Byte> ComputeWarpPrefix(SmemTypePtr<Type4Byte>& m_shared_mem,
                                          ScanOp                  scan_op,

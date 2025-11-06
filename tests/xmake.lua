@@ -17,7 +17,8 @@ local function add_test_target(file_name)
     target_end()
 end
 
-add_test_target("device_level_test")
 add_test_target("block_level_test")
 add_test_target("warp_level_test")
 add_test_target("decoupled_look_back")
+add_test_target("device_reduce_test")
+add_test_target("device_scan_test")

@@ -51,17 +51,14 @@ int main(int argc, char* argv[])
     "reduce"_test = [&]
     {
         luisa::vector<int32> result(1);
-        auto in_buffer  = device.create_buffer<int32>(array_size);
-        auto out_buffer = device.create_buffer<int32>(1);
+        auto                 in_buffer  = device.create_buffer<int32>(array_size);
+        auto                 out_buffer = device.create_buffer<int32>(1);
         stream << in_buffer.copy_from(input_data.data()) << synchronize();
 
-        reducer.Sum(
-            cmdlist, stream, in_buffer.view(), out_buffer.view(), in_buffer.size());
+        reducer.Sum(cmdlist, stream, in_buffer.view(), out_buffer.view(), in_buffer.size());
 
         stream << out_buffer.copy_to(result.data()) << synchronize();  // 输出结果
-        LUISA_INFO("Result (0+1+2+...+{}): {}",
-                   (array_size - 1),
-                   ((array_size - 1) * array_size) / 2);
+        LUISA_INFO("Result (0+1+2+...+{}): {}", (array_size - 1), ((array_size - 1) * array_size) / 2);
         LUISA_INFO("Reduce: {}", result[0]);
         expect((((array_size - 1) * array_size) / 2) == result[0]);
     };
@@ -69,8 +66,8 @@ int main(int argc, char* argv[])
     "reduce_transform"_test = [&]
     {
         luisa::vector<int32> result(1);
-        auto in_buffer  = device.create_buffer<int32>(array_size);
-        auto out_buffer = device.create_buffer<int32>(1);
+        auto                 in_buffer  = device.create_buffer<int32>(array_size);
+        auto                 out_buffer = device.create_buffer<int32>(1);
         stream << in_buffer.copy_from(input_data.data()) << synchronize();
 
         auto max_reduce_op = [](const Var<int>& a, const Var<int>& b) noexcept
@@ -81,9 +78,7 @@ int main(int argc, char* argv[])
             cmdlist, stream, in_buffer.view(), out_buffer.view(), in_buffer.size(), max_reduce_op, square_op, 0);
 
         stream << out_buffer.copy_to(result.data()) << synchronize();  // 输出结果
-        LUISA_INFO("Max Result(square) (0,1,4,...+{}): {}",
-                   (array_size - 1),
-                   (array_size - 1) * (array_size - 1));
+        LUISA_INFO("Max Result(square) (0,1,4,...+{}): {}", (array_size - 1), (array_size - 1) * (array_size - 1));
         LUISA_INFO("Result(square): {}", result[0]);
         expect((array_size - 1) * (array_size - 1) == result[0]);
     };
@@ -91,11 +86,10 @@ int main(int argc, char* argv[])
     //reduce(min)
     "reduce min"_test = [&]
     {
-        auto in_buffer  = device.create_buffer<int32>(array_size);
-        auto out_buffer = device.create_buffer<int32>(1);
+        auto                 in_buffer  = device.create_buffer<int32>(array_size);
+        auto                 out_buffer = device.create_buffer<int32>(1);
         luisa::vector<int32> result(1);
-        reducer.Min(
-            cmdlist, stream, in_buffer.view(), out_buffer.view(), in_buffer.size());
+        reducer.Min(cmdlist, stream, in_buffer.view(), out_buffer.view(), in_buffer.size());
         stream << out_buffer.copy_to(result.data()) << synchronize();  // 输出结果
         LUISA_INFO("Result Min(0-{}): {}",
                    (array_size - 1),
@@ -107,16 +101,14 @@ int main(int argc, char* argv[])
     // reduce(max)
     "reduce_max"_test = [&]
     {
-        auto in_buffer  = device.create_buffer<int32>(array_size);
-        auto out_buffer = device.create_buffer<int32>(1);
+        auto                 in_buffer  = device.create_buffer<int32>(array_size);
+        auto                 out_buffer = device.create_buffer<int32>(1);
         luisa::vector<int32> result(1);
 
         stream << in_buffer.copy_from(input_data.data()) << synchronize();
-        reducer.Max(
-            cmdlist, stream, in_buffer.view(), out_buffer.view(), in_buffer.size());
+        reducer.Max(cmdlist, stream, in_buffer.view(), out_buffer.view(), in_buffer.size());
         stream << out_buffer.copy_to(result.data()) << synchronize();  // 输出结果
-        LUISA_INFO("Result Max(0-1023): {}",
-                   *std::max_element(input_data.begin(), input_data.end()));
+        LUISA_INFO("Result Max(0-1023): {}", *std::max_element(input_data.begin(), input_data.end()));
         LUISA_INFO("Reduce Max: {}", result[0]);
         expect(*std::max_element(input_data.begin(), input_data.end()) == result[0]);
     };
@@ -128,27 +120,20 @@ int main(int argc, char* argv[])
         auto out_buffer = device.create_buffer<int32>(1);
         stream << in_buffer.copy_from(input_data.data()) << synchronize();
 
-        auto index_out_buffer = device.create_buffer<luisa::uint>(1);
+        auto                       index_out_buffer = device.create_buffer<luisa::uint>(1);
         luisa::vector<int32>       result(1);
         luisa::vector<luisa::uint> index_result(1);
-        reducer.ArgMin(cmdlist,
-                       stream,
-                       in_buffer.view(),
-                       out_buffer.view(),
-                       index_out_buffer.view(),
-                       in_buffer.size());
+        reducer.ArgMin(
+            cmdlist, stream, in_buffer.view(), out_buffer.view(), index_out_buffer.view(), in_buffer.size());
 
-        stream << out_buffer.copy_to(result.data()) << synchronize();  // 输出结果
+        stream << out_buffer.copy_to(result.data()) << synchronize();              // 输出结果
         stream << index_out_buffer.copy_to(index_result.data()) << synchronize();  // 输出结果
 
 
         LUISA_INFO("Index ArgMin: {}",
-                   std::min_element(input_data.begin(), input_data.end())
-                       - input_data.begin());
+                   std::min_element(input_data.begin(), input_data.end()) - input_data.begin());
         LUISA_INFO("Index ArgMin(reduce): {}", index_result[0]);
-        expect((std::min_element(input_data.begin(), input_data.end())
-                - input_data.begin())
-               == index_result[0]);
+        expect((std::min_element(input_data.begin(), input_data.end()) - input_data.begin()) == index_result[0]);
     };
 
     // reduce(argmax)
@@ -158,28 +143,21 @@ int main(int argc, char* argv[])
         auto out_buffer = device.create_buffer<int32>(1);
         stream << in_buffer.copy_from(input_data.data()) << synchronize();
 
-        auto index_out_buffer = device.create_buffer<luisa::uint>(1);
+        auto                       index_out_buffer = device.create_buffer<luisa::uint>(1);
         luisa::vector<int32>       result(1);
         luisa::vector<luisa::uint> index_result(1);
-        reducer.ArgMax(cmdlist,
-                       stream,
-                       in_buffer.view(),
-                       out_buffer.view(),
-                       index_out_buffer.view(),
-                       in_buffer.size());
+        reducer.ArgMax(
+            cmdlist, stream, in_buffer.view(), out_buffer.view(), index_out_buffer.view(), in_buffer.size());
 
         stream << out_buffer.copy_to(result.data()) << synchronize();
         stream << index_out_buffer.copy_to(index_result.data()) << synchronize();
 
 
         LUISA_INFO("Index ArgMax: {}",
-                   std::max_element(input_data.begin(), input_data.end())
-                       - input_data.begin());
+                   std::max_element(input_data.begin(), input_data.end()) - input_data.begin());
         LUISA_INFO("Index ArgMax(reduce): {}", index_result[0]);
 
-        expect((std::max_element(input_data.begin(), input_data.end())
-                - input_data.begin())
-               == index_result[0]);
+        expect((std::max_element(input_data.begin(), input_data.end()) - input_data.begin()) == index_result[0]);
     };
 
 
@@ -198,10 +176,7 @@ int main(int argc, char* argv[])
             input_keys[i] = i / items_per_segment;  // 每 100 个元素一组
         }
 
-        LUISA_INFO("Array size: {}, Items per segment: {}, Total segments: {}",
-                   array_size,
-                   items_per_segment,
-                   segments);
+        LUISA_INFO("Array size: {}, Items per segment: {}, Total segments: {}", array_size, items_per_segment, segments);
 
         auto unique_keys_buffer = device.create_buffer<int32>(segments);
         auto aggregates_buffer  = device.create_buffer<int32>(segments);
@@ -225,8 +200,8 @@ int main(int argc, char* argv[])
         luisa::vector<int32>       aggregates(segments);
         luisa::vector<luisa::uint> num_runs(1);
         stream << unique_keys_buffer.copy_to(unique_keys.data()) << synchronize();  // 输出结果
-        stream << aggregates_buffer.copy_to(aggregates.data()) << synchronize();  // 输出结果
-        stream << num_runs_buffer.copy_to(num_runs.data()) << synchronize();  // 输出结果
+        stream << aggregates_buffer.copy_to(aggregates.data()) << synchronize();    // 输出结果
+        stream << num_runs_buffer.copy_to(num_runs.data()) << synchronize();        // 输出结果
 
         LUISA_INFO("Reduce By Key: num_runs: {}", num_runs[0]);
 
@@ -234,9 +209,7 @@ int main(int argc, char* argv[])
         for(auto i = 0; i < segments; i++)
         {
             auto expected_sum = 0;
-            for(auto j = i * items_per_segment;
-                j < (i + 1) * items_per_segment && j < array_size;
-                j++)
+            for(auto j = i * items_per_segment; j < (i + 1) * items_per_segment && j < array_size; j++)
             {
                 expected_sum += input_data[j];
             }
