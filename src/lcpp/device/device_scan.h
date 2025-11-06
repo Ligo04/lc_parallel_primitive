@@ -1,12 +1,13 @@
 /*
  * @Author: Ligo 
  * @Date: 2025-10-09 09:52:40 
- * @Last Modified by:   Ligo 
- * @Last Modified time: 2025-10-09 09:52:40 
+ * @Last Modified by: Ligo
+ * @Last Modified time: 2025-11-07 00:12:25
  */
 
 
 #pragma once
+#include "luisa/runtime/buffer.h"
 #include <cstddef>
 #include <luisa/runtime/stream.h>
 #include <luisa/dsl/struct.h>
@@ -19,10 +20,12 @@
 #include <lcpp/runtime/core.h>
 #include <lcpp/common/type_trait.h>
 #include <lcpp/common/keyvaluepair.h>
+#include <lcpp/common/utils.h>
 #include <lcpp/block/block_reduce.h>
 #include <lcpp/warp/warp_reduce.h>
 #include <lcpp/device/details/scan.h>
 #include <lcpp/device/details/single_pass_scan_operator.h>
+#include <lcpp/device/details/scan_by_key.h>
 
 namespace luisa::parallel_primitive
 {
@@ -64,7 +67,7 @@ class DeviceScan : public LuisaModule
     {
         int num_tiles = imax(1, (int)ceil((float)num_items / (ITEMS_PER_THREAD * m_block_size)));
         // tilestate
-        using ScanShaderT    = details::ScanShader<Type4Byte, BLOCK_SIZE, ITEMS_PER_THREAD>;
+        using ScanShaderT    = details::ScanModule<Type4Byte, BLOCK_SIZE, ITEMS_PER_THREAD>;
         using ScanTileStateT = ScanShaderT::TileState;
         Buffer<ScanTileStateT> tile_states =
             m_device.create_buffer<ScanTileStateT>(details::WARP_SIZE + num_tiles);
@@ -83,7 +86,7 @@ class DeviceScan : public LuisaModule
     {
         int num_tiles = imax(1, (int)ceil((float)num_items / (ITEMS_PER_THREAD * m_block_size)));
         // tilestate
-        using ScanShaderT    = details::ScanShader<Type4Byte, BLOCK_SIZE, ITEMS_PER_THREAD>;
+        using ScanShaderT    = details::ScanModule<Type4Byte, BLOCK_SIZE, ITEMS_PER_THREAD>;
         using ScanTileStateT = ScanShaderT::TileState;
         Buffer<ScanTileStateT> tile_states =
             m_device.create_buffer<ScanTileStateT>(details::WARP_SIZE + num_tiles);
@@ -117,15 +120,70 @@ class DeviceScan : public LuisaModule
             Type4Byte(0));
     }
 
+    template <NumericT KeyType, NumericT ValueType, typename ScanOp>
+    void ExclusiveScanByKey(CommandList&          cmdlist,
+                            Stream&               stream,
+                            BufferView<KeyType>   d_keys_in,
+                            BufferView<ValueType> d_values_in,
+                            BufferView<ValueType> d_values_out,
+                            ScanOp                scan_op,
+                            size_t                num_items,
+                            ValueType             initial_value)
+    {
+        int num_tiles = imax(1, (int)ceil((float)num_items / (ITEMS_PER_THREAD * m_block_size)));
+        // tilestate
+        using ScanByKey = details::ScanByKeyModule<KeyType, ValueType, BLOCK_SIZE, ITEMS_PER_THREAD>;
+        using ScanByKeyTileState = ScanByKey::ScanTileState;
+        Buffer<ScanByKeyTileState> tile_states =
+            m_device.create_buffer<ScanByKeyTileState>(details::WARP_SIZE + num_tiles);
+
+        Buffer<KeyType> d_prev_keys_in = m_device.create_buffer<KeyType>(num_tiles);
+        scan_by_key_array<KeyType, ValueType>(
+            cmdlist, tile_states.view(), d_keys_in, d_prev_keys_in.view(), d_values_in, d_values_out, num_items, scan_op, initial_value, false);
+        stream << cmdlist.commit() << synchronize();
+    }
+
+    template <NumericT KeyType, NumericT ValueType, typename ScanOp>
+    void InclusiveScanByKey(CommandList&          cmdlist,
+                            Stream&               stream,
+                            BufferView<KeyType>   d_keys_in,
+                            BufferView<ValueType> d_values_in,
+                            BufferView<ValueType> d_values_out,
+                            ScanOp                scan_op,
+                            size_t                num_items,
+                            ValueType             initial_value)
+    {
+        int num_tiles = imax(1, (int)ceil((float)num_items / (ITEMS_PER_THREAD * m_block_size)));
+        // tilestate
+        using ScanByKey = details::ScanByKeyModule<KeyType, ValueType, BLOCK_SIZE, ITEMS_PER_THREAD>;
+        using ScanByKeyTileState = ScanByKey::ScanTileState;
+        Buffer<ScanByKeyTileState> tile_states =
+            m_device.create_buffer<ScanByKeyTileState>(details::WARP_SIZE + num_tiles);
+
+        Buffer<KeyType> d_prev_keys_in = m_device.create_buffer<KeyType>(num_tiles);
+        scan_by_key_array<KeyType, ValueType>(
+            cmdlist, tile_states.view(), d_keys_in, d_prev_keys_in.view(), d_values_in, d_values_out, num_items, scan_op, initial_value, true);
+        stream << cmdlist.commit() << synchronize();
+    }
+
 
     template <NumericT Type4Byte>
-    void ExclusivSumByKey(CommandList&          cmdlist,
-                          Stream&               stream,
-                          BufferView<Type4Byte> d_keys_in,
-                          BufferView<Type4Byte> d_values_in,
-                          BufferView<Type4Byte> d_values_out,
-                          size_t                num_items)
+    void ExclusiveSumByKey(CommandList&          cmdlist,
+                           Stream&               stream,
+                           BufferView<Type4Byte> d_keys_in,
+                           BufferView<Type4Byte> d_values_in,
+                           BufferView<Type4Byte> d_values_out,
+                           size_t                num_items)
     {
+        ExclusiveScanByKey(
+            cmdlist,
+            stream,
+            d_keys_in,
+            d_values_in,
+            d_values_out,
+            [](const Var<Type4Byte>& a, const Var<Type4Byte>& b) { return a + b; },
+            num_items,
+            Type4Byte(0));
     }
 
     template <NumericT Type4Byte>
@@ -136,6 +194,15 @@ class DeviceScan : public LuisaModule
                            BufferView<Type4Byte> d_values_out,
                            size_t                num_items)
     {
+        InclusiveScanByKey(
+            cmdlist,
+            stream,
+            d_keys_in,
+            d_values_in,
+            d_values_out,
+            [](const Var<Type4Byte>& a, const Var<Type4Byte>& b) { return a + b; },
+            num_items,
+            Type4Byte(0));
     }
 
 
@@ -152,19 +219,19 @@ class DeviceScan : public LuisaModule
     {
         auto num_tiles = imax(1, (int)ceil((float)num_items / (ITEMS_PER_THREAD * m_block_size)));
 
-        using ScanShader    = details::ScanShader<Type4Byte, BLOCK_SIZE, ITEMS_PER_THREAD>;
+        using ScanShader    = details::ScanModule<Type4Byte, BLOCK_SIZE, ITEMS_PER_THREAD>;
         using ScanTileState = ScanShader::TileState;
         using ScanTileStateInitKernel = ScanShader::ScanTileStateInitKernel;
         using ScanShaderKernel        = ScanShader::ScanKernel;
 
         size_t init_num_blocks = ceil(float(num_tiles) / BLOCK_SIZE);
         auto   init_key = luisa::string{luisa::compute::Type::of<Type4Byte>()->description()};
-        auto   ms_tile_state_init_it = ms_tile_state_init_map.find(init_key);
-        if(ms_tile_state_init_it == ms_tile_state_init_map.end())
+        auto   ms_tile_state_init_it = ms_scan_key.find(init_key);
+        if(ms_tile_state_init_it == ms_scan_key.end())
         {
             auto shader = ScanShader().compile_scan_tile_state_init(m_device);
-            ms_tile_state_init_map.try_emplace(init_key, std::move(shader));
-            ms_tile_state_init_it = ms_tile_state_init_map.find(init_key);
+            ms_scan_key.try_emplace(init_key, std::move(shader));
+            ms_tile_state_init_it = ms_scan_key.find(init_key);
         }
         auto ms_scan_tile_state_init_ptr =
             reinterpret_cast<ScanTileStateInitKernel*>(&(*ms_tile_state_init_it->second));
@@ -194,9 +261,71 @@ class DeviceScan : public LuisaModule
         cmdlist << (*ms_scan_ptr)(tile_states, d_in, d_out, initial_value, num_items).dispatch(m_block_size * num_tiles);
     };
 
-    luisa::unordered_map<luisa::string, luisa::shared_ptr<luisa::compute::Resource>> ms_tile_state_init_map;
+
+    template <NumericT KeyValue, NumericT ValueType, typename ScanTileStateT, typename ScanOp>
+    void scan_by_key_array(CommandList&               cmdlist,
+                           BufferView<ScanTileStateT> tile_states,
+                           BufferView<KeyValue>       d_keys_in,
+                           BufferView<KeyValue>       d_prev_keys_in,
+                           BufferView<ValueType>      d_values_in,
+                           BufferView<ValueType>      d_values_out,
+                           size_t                     num_items,
+                           ScanOp                     scan_op,
+                           ValueType                  initial_value,
+                           bool                       is_inclusive)
+    {
+        auto num_tiles = imax(1, (int)ceil((float)num_items / (ITEMS_PER_THREAD * m_block_size)));
+
+        using ScanByKeyShader = details::ScanByKeyModule<KeyValue, ValueType, BLOCK_SIZE, ITEMS_PER_THREAD>;
+        using ScanByKeyTileState           = ScanByKeyShader::ScanTileState;
+        using ScanByKeyTileStateInitKernel = ScanByKeyShader::ScanTileStateInitKernel;
+        using ScanByKeyShaderKernel        = ScanByKeyShader::ScanByKeyKernel;
+
+        size_t init_num_blocks                 = ceil(float(num_tiles) / BLOCK_SIZE);
+        auto   init_key                        = get_type_and_op_desc<KeyValue, ValueType>();
+        auto ms_scan_by_key_tile_state_init_it = ms_scan_by_key_tile_state_init_map.find(init_key);
+        if(ms_scan_by_key_tile_state_init_it == ms_scan_by_key_tile_state_init_map.end())
+        {
+            auto shader = ScanByKeyShader().compile_scan_tile_state_init(m_device);
+            ms_scan_by_key_tile_state_init_map.try_emplace(init_key, std::move(shader));
+            ms_scan_by_key_tile_state_init_it = ms_scan_by_key_tile_state_init_map.find(init_key);
+        }
+        auto ms_scan_by_key_tile_state_init_ptr =
+            reinterpret_cast<ScanByKeyTileStateInitKernel*>(&(*ms_scan_by_key_tile_state_init_it->second));
+        cmdlist << (*ms_scan_by_key_tile_state_init_ptr)(tile_states, d_keys_in, d_prev_keys_in, uint(num_tiles))
+                       .dispatch(m_block_size * num_tiles);
+
+        // scan
+        auto key           = get_type_and_op_desc<KeyValue, ValueType>(scan_op);
+        auto ms_scan_by_it = is_inclusive ? ms_inclusive_scan_by_key_map.find(key) :
+                                            ms_exclusive_scan_by_key_map.find(key);
+        if(ms_scan_by_it
+           == (is_inclusive ? ms_inclusive_scan_by_key_map : ms_exclusive_scan_by_key_map).end())
+        {
+            LUISA_INFO("Compiling Scan By Key shader for key: {}", key);
+            if(is_inclusive)
+            {
+                auto shader = ScanByKeyShader().template compile<true>(m_device, m_shared_mem_size, scan_op);
+                ms_inclusive_scan_by_key_map.try_emplace(key, std::move(shader));
+                ms_scan_by_it = ms_inclusive_scan_by_key_map.find(key);
+            }
+            else
+            {
+                auto shader = ScanByKeyShader().template compile<false>(m_device, m_shared_mem_size, scan_op);
+                ms_exclusive_scan_by_key_map.try_emplace(key, std::move(shader));
+                ms_scan_by_it = ms_exclusive_scan_by_key_map.find(key);
+            }
+        }
+        auto ms_scan_by_key_ptr = reinterpret_cast<ScanByKeyShaderKernel*>(&(*ms_scan_by_it->second));
+        cmdlist << (*ms_scan_by_key_ptr)(tile_states, d_keys_in, d_prev_keys_in, d_values_in, d_values_out, initial_value, num_items)
+                       .dispatch(m_block_size * num_tiles);
+    }
+
+    luisa::unordered_map<luisa::string, luisa::shared_ptr<luisa::compute::Resource>> ms_scan_key;
     luisa::unordered_map<luisa::string, luisa::shared_ptr<luisa::compute::Resource>> ms_exclusive_scan_map;
     luisa::unordered_map<luisa::string, luisa::shared_ptr<luisa::compute::Resource>> ms_inclusive_scan_map;
+
+    luisa::unordered_map<luisa::string, luisa::shared_ptr<luisa::compute::Resource>> ms_scan_by_key_tile_state_init_map;
     luisa::unordered_map<luisa::string, luisa::shared_ptr<luisa::compute::Resource>> ms_exclusive_scan_by_key_map;
     luisa::unordered_map<luisa::string, luisa::shared_ptr<luisa::compute::Resource>> ms_inclusive_scan_by_key_map;
 };

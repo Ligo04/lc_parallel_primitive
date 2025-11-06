@@ -2,7 +2,7 @@
  * @Author: Ligo 
  * @Date: 2025-09-29 11:30:37 
  * @Last Modified by: Ligo
- * @Last Modified time: 2025-10-22 23:56:58
+ * @Last Modified time: 2025-11-06 17:58:06
  */
 #pragma once
 
@@ -38,9 +38,10 @@ class WarpScan : public LuisaModule
 
   public:
     template <typename ScanOp>
-    void ExclusiveScan(const Var<Type4Byte>& thread_data, Var<Type4Byte>& exclusive_output, ScanOp op)
+    void ExclusiveScan(const Var<Type4Byte>& thread_data, Var<Type4Byte>& exclusive_output, ScanOp scan_op)
     {
-        ExclusiveScan(thread_data, exclusive_output, op, Type4Byte(0));
+        Var<Type4Byte> warp_aggregate;
+        ExclusiveScan(thread_data, exclusive_output, warp_aggregate, scan_op);
     }
 
     template <typename ScanOp>
@@ -65,7 +66,7 @@ class WarpScan : public LuisaModule
                        Var<Type4Byte>&       exclusive_output,
                        Var<Type4Byte>&       warp_aggregate,
                        ScanOp                scan_op,
-                       const Var<Type4Byte>& initial_value = Type4Byte(0))
+                       const Var<Type4Byte>& initial_value)
     {
         compute::set_warp_size(WARP_SIZE);
 
@@ -80,9 +81,9 @@ class WarpScan : public LuisaModule
     }
 
     template <typename ScanOp>
-    void InclusiveScan(const Var<Type4Byte>& thread_in, Var<Type4Byte>& inclusive_output, ScanOp op)
+    void InclusiveScan(const Var<Type4Byte>& thread_in, Var<Type4Byte>& inclusive_output, ScanOp scan_op)
     {
-        InclusiveScan(thread_in, inclusive_output, op, Type4Byte(0));
+        InclusiveScan(thread_in, inclusive_output, scan_op);
     }
 
     template <typename ScanOp>
@@ -107,7 +108,7 @@ class WarpScan : public LuisaModule
                        Var<Type4Byte>&       inclusive_output,
                        Var<Type4Byte>&       warp_aggregate,
                        ScanOp                scan_op,
-                       const Var<Type4Byte>& initial_value = Type4Byte(0))
+                       const Var<Type4Byte>& initial_value)
     {
         compute::set_warp_size(WARP_SIZE);
         if(WarpScanMethod == WarpScanAlgorithm::WARP_SHUFFLE)
@@ -123,21 +124,17 @@ class WarpScan : public LuisaModule
         ExclusiveScan(
             thread_data,
             exclusive_output,
-            [](const Var<Type4Byte>& a, const Var<Type4Byte>& b)
-            { return a + b; },
+            [](const Var<Type4Byte>& a, const Var<Type4Byte>& b) { return a + b; },
             Type4Byte(0));
     }
 
-    void ExclusiveSum(const Var<Type4Byte>& thread_data,
-                      Var<Type4Byte>&       exclusive_output,
-                      Var<Type4Byte>&       warp_aggregate)
+    void ExclusiveSum(const Var<Type4Byte>& thread_data, Var<Type4Byte>& exclusive_output, Var<Type4Byte>& warp_aggregate)
     {
         ExclusiveScan(
             thread_data,
             exclusive_output,
             warp_aggregate,
-            [](const Var<Type4Byte>& a, const Var<Type4Byte>& b)
-            { return a + b; },
+            [](const Var<Type4Byte>& a, const Var<Type4Byte>& b) { return a + b; },
             Type4Byte(0));
     }
 
@@ -146,35 +143,27 @@ class WarpScan : public LuisaModule
         InclusiveScan(
             thread_data,
             inclusive_output,
-            [](const Var<Type4Byte>& a, const Var<Type4Byte>& b)
-            { return a + b; },
+            [](const Var<Type4Byte>& a, const Var<Type4Byte>& b) { return a + b; },
             Type4Byte(0));
     }
 
-    void InclusiveSum(const Var<Type4Byte>& thread_data,
-                      Var<Type4Byte>&       inclusive_output,
-                      Var<Type4Byte>&       warp_aggregate)
+    void InclusiveSum(const Var<Type4Byte>& thread_data, Var<Type4Byte>& inclusive_output, Var<Type4Byte>& warp_aggregate)
     {
         InclusiveScan(
             thread_data,
             inclusive_output,
             warp_aggregate,
-            [](const Var<Type4Byte>& a, const Var<Type4Byte>& b)
-            { return a + b; },
+            [](const Var<Type4Byte>& a, const Var<Type4Byte>& b) { return a + b; },
             Type4Byte(0));
     }
 
     template <typename ScanOp>
-    void Scan(const Var<Type4Byte>& thread_data,
-              Var<Type4Byte>&       inclusive_output,
-              Var<Type4Byte>&       exclusive_output,
-              ScanOp                scan_op)
+    void Scan(const Var<Type4Byte>& thread_data, Var<Type4Byte>& inclusive_output, Var<Type4Byte>& exclusive_output, ScanOp scan_op)
     {
         compute::set_warp_size(WARP_SIZE);
         if(WarpScanMethod == WarpScanAlgorithm::WARP_SHUFFLE)
         {
-            details::WarpScanShfl<Type4Byte, WARP_SIZE>().Scan(
-                thread_data, inclusive_output, exclusive_output, scan_op);
+            details::WarpScanShfl<Type4Byte, WARP_SIZE>().Scan(thread_data, inclusive_output, exclusive_output, scan_op);
         };
     }
 

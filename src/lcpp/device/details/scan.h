@@ -2,7 +2,7 @@
  * @Author: Ligo 
  * @Date: 2025-10-21 23:03:40 
  * @Last Modified by: Ligo
- * @Last Modified time: 2025-10-22 23:55:23
+ * @Last Modified time: 2025-11-06 16:33:11
  */
 
 #pragma once
@@ -29,7 +29,7 @@ namespace details
     using namespace luisa::compute;
 
     template <NumericT Type4Byte, size_t BLOCK_SIZE = details::BLOCK_SIZE, size_t ITEMS_PER_THREAD = details::ITEMS_PER_THREAD>
-    class ScanShader : public LuisaModule
+    class ScanModule : public LuisaModule
     {
       public:
         using TileState = ScanTileState<Type4Byte>;
@@ -60,7 +60,7 @@ namespace details
                 scan_shader,
                 [&](BufferVar<TileState> tile_state,
                     BufferVar<Type4Byte> d_in,
-                    BufferVar<Type4Byte> g_out,
+                    BufferVar<Type4Byte> d_out,
                     Var<Type4Byte>       init_value,
                     UInt                 num_elements)
                 {
@@ -127,11 +127,11 @@ namespace details
                     $if(is_last_tile)
                     {
                         BlockStore<Type4Byte, BLOCK_SIZE, ITEMS_PER_THREAD>(s_data).Store(
-                            output_items, g_out, tile_start, num_remaining);
+                            output_items, d_out, tile_start, num_remaining);
                     }
                     $else
                     {
-                        BlockStore<Type4Byte, BLOCK_SIZE, ITEMS_PER_THREAD>(s_data).Store(output_items, g_out, tile_start);
+                        BlockStore<Type4Byte, BLOCK_SIZE, ITEMS_PER_THREAD>(s_data).Store(output_items, d_out, tile_start);
                     };
                 });
 

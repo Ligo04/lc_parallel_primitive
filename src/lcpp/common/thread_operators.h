@@ -2,7 +2,7 @@
  * @Author: Ligo 
  * @Date: 2025-10-20 16:29:10 
  * @Last Modified by: Ligo
- * @Last Modified time: 2025-10-22 17:16:51
+ * @Last Modified time: 2025-11-06 21:09:23
  */
 
 #pragma once
@@ -62,8 +62,7 @@ struct ReduceBySegmentOp
     ReduceOpT reduce_op;
 
     template <KeyValuePairType KeyValuePairT>
-    Var<KeyValuePairT> operator()(const Var<KeyValuePairT>& a,
-                                  const Var<KeyValuePairT>& b) const noexcept
+    Var<KeyValuePairT> operator()(const Var<KeyValuePairT>& a, const Var<KeyValuePairT>& b) const noexcept
     {
         Var<KeyValuePairT> result;
         result.key = a.key + b.key;
@@ -79,6 +78,28 @@ struct ReduceBySegmentOp
     }
 };
 
+template <typename ScanOpT>
+struct ScanBySegmentOp
+{
+    ScanOpT scan_op;
+
+    template <KeyValuePairType KeyValuePairT>
+    Var<KeyValuePairT> operator()(const Var<KeyValuePairT>& a, const Var<KeyValuePairT>& b) const noexcept
+    {
+        Var<KeyValuePairT> result;
+        result.key = a.key | b.key;
+        $if(b.key > 0)
+        {
+            result.value = b.value;
+        }
+        $else
+        {
+            result.value = scan_op(a.value, b.value);
+        };
+        return result;
+    }
+};
+
 
 template <typename ReduceOpT>
 struct ReduceByKeyOp
@@ -86,8 +107,7 @@ struct ReduceByKeyOp
     ReduceOpT reduce_op;
 
     template <KeyValuePairType KeyValuePairT>
-    Var<KeyValuePairT> operator()(const Var<KeyValuePairT>& a,
-                                  const Var<KeyValuePairT>& b) const noexcept
+    Var<KeyValuePairT> operator()(const Var<KeyValuePairT>& a, const Var<KeyValuePairT>& b) const noexcept
     {
         Var<KeyValuePairT> result = b;
         $if(a.key == b.key)

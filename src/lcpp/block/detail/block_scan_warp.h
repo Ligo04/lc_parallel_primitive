@@ -2,7 +2,7 @@
  * @Author: Ligo 
  * @Date: 2025-10-17 15:33:13 
  * @Last Modified by: Ligo
- * @Last Modified time: 2025-10-22 23:52:15
+ * @Last Modified time: 2025-11-06 17:49:28
  */
 
 #pragma once
@@ -65,8 +65,8 @@ namespace details
             WarpScan<Type4Byte, WARP_SIZE, WarpScanAlgorithm::WARP_SHUFFLE>().Scan(
                 thread_data, inclusive_output, exclusive_output, scan_op, initial_value);
 
-            Var<Type4Byte> warp_prefix = ComputeWarpPrefix(
-                m_shared_mem, scan_op, inclusive_output, block_aggregate, initial_value);
+            Var<Type4Byte> warp_prefix =
+                ComputeWarpPrefix(m_shared_mem, scan_op, inclusive_output, block_aggregate, initial_value);
 
             UInt warp_id = thread_id().x / warp_lane_count();
             UInt lane_id = warp_lane_id();
@@ -144,8 +144,8 @@ namespace details
         {
             WarpScan<Type4Byte, WARP_SIZE>().InclusiveScan(thread_data, inclusive_output, scan_op);
 
-            Var<Type4Byte> warp_prefix = ComputeWarpPrefix(
-                m_shared_mem, scan_op, inclusive_output, block_aggregate, initial_value);
+            Var<Type4Byte> warp_prefix =
+                ComputeWarpPrefix(m_shared_mem, scan_op, inclusive_output, block_aggregate, initial_value);
 
             UInt warp_id = thread_id().x / warp_lane_count();
             $if(warp_id != 0)
@@ -162,7 +162,7 @@ namespace details
                            BlockPrefixCallbackOp   prefix_op)
         {
             SmemTypePtr<Type4Byte> shared_mem_block_prefix = new SmemType<Type4Byte>{1};
-            Var<Type4Byte> block_aggregate;
+            Var<Type4Byte>         block_aggregate;
             InclusiveScan(m_shared_mem, thread_data, inclusive_output, block_aggregate, scan_op);
 
             UInt warp_id = thread_id().x / warp_lane_count();
@@ -179,7 +179,7 @@ namespace details
             sync_block();
 
             Var<Type4Byte> block_prefix = (*shared_mem_block_prefix)[0];
-            inclusive_output = scan_op(block_prefix, inclusive_output);
+            inclusive_output            = scan_op(block_prefix, inclusive_output);
         }
 
       private:
@@ -187,7 +187,7 @@ namespace details
         Var<Type4Byte> ComputeWarpPrefix(SmemTypePtr<Type4Byte>& m_shared_mem,
                                          ScanOp                  scan_op,
                                          const Var<Type4Byte>&   warp_aggregate,
-                                         Var<Type4Byte>& block_aggregate)
+                                         Var<Type4Byte>&         block_aggregate)
         {
             UInt warp_id = thread_id().x / warp_lane_count();
             UInt lane_id = warp_lane_id();
@@ -219,8 +219,8 @@ namespace details
         Var<Type4Byte> ComputeWarpPrefix(SmemTypePtr<Type4Byte>& m_shared_mem,
                                          ScanOp                  scan_op,
                                          const Var<Type4Byte>&   warp_aggregate,
-                                         Var<Type4Byte>&       block_aggregate,
-                                         const Var<Type4Byte>& initial_value)
+                                         Var<Type4Byte>&         block_aggregate,
+                                         const Var<Type4Byte>&   initial_value)
         {
             Var<Type4Byte> warp_prefix =
                 ComputeWarpPrefix(m_shared_mem, scan_op, warp_aggregate, block_aggregate);

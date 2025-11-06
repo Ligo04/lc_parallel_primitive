@@ -25,7 +25,7 @@ int main(int argc, char* argv[])
 
     Context context{argv[1]};
 #ifdef _WIN32
-    Device device = context.create_device("dx");
+    Device device = context.create_device("cuda");
 #elif __APPLE__
     Device device = context.create_device("metal");
 #endif

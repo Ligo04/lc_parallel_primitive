@@ -2,21 +2,18 @@
  * @Author: Ligo 
  * @Date: 2025-10-22 17:17:43 
  * @Last Modified by: Ligo
- * @Last Modified time: 2025-10-22 18:24:53
+ * @Last Modified time: 2025-11-06 21:24:06
  */
 
 
 #pragma once
-#include "lcpp/runtime/core.h"
-#include "luisa/core/basic_traits.h"
-#include "luisa/dsl/stmt.h"
-#include <__msvc_iter_core.hpp>
 #include <cmath>
 #include <cstddef>
-#include <luisa/luisa-compute.h>
+#include <typeindex>
 #include <luisa/dsl/builtin.h>
 #include <luisa/dsl/var.h>
 #include <lcpp/common/keyvaluepair.h>
+#include <lcpp/runtime/core.h>
 
 namespace luisa::parallel_primitive
 {

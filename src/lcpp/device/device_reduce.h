@@ -2,7 +2,7 @@
  * @Author: Ligo 
  * @Date: 2025-09-19 14:24:07 
  * @Last Modified by: Ligo
- * @Last Modified time: 2025-10-23 02:05:55
+ * @Last Modified time: 2025-11-07 00:26:05
  */
 
 #pragma once
@@ -320,7 +320,7 @@ class DeviceReduce : public LuisaModule
                 num_threads_last_block = floor_pow_2(num_elements_last_block);
             }
         }
-        using ReduceShader = details::ReduceShader<Type, BLOCK_SIZE, ITEMS_PER_THREAD>;
+        using ReduceShader = details::ReduceModule<Type, BLOCK_SIZE, ITEMS_PER_THREAD>;
         using ReduceKernel = ReduceShader::ReduceShaderKernel;
 
         size_t           size_elements     = temp_storage.size() - offset;
@@ -407,7 +407,7 @@ class DeviceReduce : public LuisaModule
                 num_threads_last_block = floor_pow_2(num_elements_last_block);
             }
         }
-        using ReduceShader = details::ReduceShader<Type, BLOCK_SIZE, ITEMS_PER_THREAD>;
+        using ReduceShader = details::ReduceModule<Type, BLOCK_SIZE, ITEMS_PER_THREAD>;
         using ReduceKernel = ReduceShader::ReduceShaderKernel;
 
         size_t           size_elements     = temp_storage.size() - offset;
@@ -523,9 +523,8 @@ class DeviceReduce : public LuisaModule
         using ReduceByKeyKernel              = ReduceByKey::ReduceByKeyKernel;
 
         // init
-        size_t init_num_blocks            = ceil(float(num_tiles) / BLOCK_SIZE);
-        auto   init_key                   = get_type_and_op_desc<KeyType, ValueType>();
-        auto   ms_scan_tile_state_init_it = ms_scan_tile_state_init_map.find(init_key);
+        auto init_key                   = get_type_and_op_desc<KeyType, ValueType>();
+        auto ms_scan_tile_state_init_it = ms_scan_tile_state_init_map.find(init_key);
         if(ms_scan_tile_state_init_it == ms_scan_tile_state_init_map.end())
         {
             auto shader = ReduceByKey().compile_scan_tile_state_init(m_device);
@@ -534,7 +533,7 @@ class DeviceReduce : public LuisaModule
         }
         auto ms_scan_tile_state_init_ptr =
             reinterpret_cast<ReduceByKeyTileStateInitKernel*>(&(*ms_scan_tile_state_init_it->second));
-        cmdlist << (*ms_scan_tile_state_init_ptr)(tile_states, num_tiles).dispatch(init_num_blocks);
+        cmdlist << (*ms_scan_tile_state_init_ptr)(tile_states, num_tiles).dispatch(num_tiles * m_block_size);
         // reduce by key
 
         auto key                 = get_type_and_op_desc<KeyType, ValueType>(reduce_op);

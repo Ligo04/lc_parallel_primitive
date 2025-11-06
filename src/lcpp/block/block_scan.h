@@ -2,7 +2,7 @@
  * @Author: Ligo 
  * @Date: 2025-09-28 15:37:17 
  * @Last Modified by: Ligo
- * @Last Modified time: 2025-10-22 22:46:21
+ * @Last Modified time: 2025-11-06 22:13:32
  */
 #pragma once
 #include <luisa/dsl/var.h>
@@ -174,7 +174,7 @@ class BlockScan : public LuisaModule
                 ExclusiveScan(thread_aggregate, thread_output, block_aggregate, scan_op, initial_value);
 
                 ThreadScan<Type4Byte, ITEMS_PER_THREAD>().ThreadScanExclusive(
-                    thread_datas, output_block_sums, scan_op, thread_output, compute::thread_x() != 0u);
+                    thread_datas, output_block_sums, scan_op, thread_output);
             };
         };
     }

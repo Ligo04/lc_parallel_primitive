@@ -2,7 +2,7 @@
  * @Author: Ligo 
  * @Date: 2025-10-21 23:03:40 
  * @Last Modified by: Ligo
- * @Last Modified time: 2025-11-06 14:31:03
+ * @Last Modified time: 2025-11-06 15:01:37
  */
 
 #pragma once
@@ -73,7 +73,7 @@ namespace details
 
 
     template <NumericTOrKeyValuePairT DataType, size_t BLOCK_SIZE = details::BLOCK_SIZE, size_t ITEMS_PER_THREAD = details::ITEMS_PER_THREAD>
-    class ReduceShader : public LuisaModule
+    class ReduceModule : public LuisaModule
     {
       public:
         using ReduceShaderKernel = Shader<1, Buffer<DataType>, Buffer<DataType>, uint, uint, uint, DataType>;

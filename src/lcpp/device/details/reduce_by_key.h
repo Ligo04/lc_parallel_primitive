@@ -2,7 +2,7 @@
  * @Author: Ligo 
  * @Date: 2025-10-21 22:12:15 
  * @Last Modified by: Ligo
- * @Last Modified time: 2025-10-22 23:56:51
+ * @Last Modified time: 2025-11-07 00:25:12
  */
 
 #pragma once
@@ -49,7 +49,10 @@ namespace details
             lazy_compile(device,
                          ms_scan_tile_state_init_shader,
                          [](BufferVar<ScanTileState> tile_state, Int num_tiles) noexcept
-                         { ScanTileStateViewer::InitializeWardStatus(tile_state, num_tiles); });
+                         {
+                             set_block_size(BLOCK_SIZE);
+                             ScanTileStateViewer::InitializeWardStatus(tile_state, num_tiles);
+                         });
 
             return ms_scan_tile_state_init_shader;
         }
@@ -138,7 +141,7 @@ namespace details
 
                     SmemTypePtr<KeyType>   s_keys   = new SmemType<KeyType>{shared_mem_size};
                     SmemTypePtr<ValueType> s_values = new SmemType<ValueType>{shared_mem_size};
-                    SmemTypePtr<int>       s_discontinutity = new SmemType<int>{shared_mem_size};
+                    // SmemTypePtr<int>       s_discontinutity = new SmemType<int>{shared_mem_size};
 
                     ArrayVar<KeyType, ITEMS_PER_THREAD>   local_keys;
                     ArrayVar<KeyType, ITEMS_PER_THREAD>   local_prev_keys;
