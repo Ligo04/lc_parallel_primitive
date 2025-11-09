@@ -36,5 +36,6 @@ target_link_libraries(lcpp INTERFACE luisa::compute)
 option(LCPP_BUILD_TESTS "Build lcpp tests" ${lcpp_IS_TOP_LEVEL})
 
 if (LCPP_BUILD_TESTS)
+    enable_testing()
     add_subdirectory(tests)
 endif ()

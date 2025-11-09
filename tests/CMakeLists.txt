@@ -18,12 +18,11 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(cpptrace)
 
-enable_testing()
 function(lcpp_add_test test_name)
     add_executable(${test_name} ${test_name}.cpp)
     target_link_libraries(${test_name} PRIVATE lcpp Boost::ut cpptrace::cpptrace)
     add_test(NAME ${test_name} COMMAND ${test_name} $<TARGET_FILE_DIR:luisa-compute-core>)
-    set_tests_properties(${test_name} PROPERTIES ENVIRONMENT "LUISA_EXPERIMENTAL_LLVM_CODEGEN=1")
+#    set_tests_properties(${test_name} PROPERTIES ENVIRONMENT "LUISA_EXPERIMENTAL_LLVM_CODEGEN=1")
 endfunction()
 
 lcpp_add_test(block_level_test)
