@@ -2,7 +2,7 @@
  * @Author: Ligo 
  * @Date: 2025-09-22 10:51:36 
  * @Last Modified by: Ligo
- * @Last Modified time: 2025-10-22 23:57:19
+ * @Last Modified time: 2025-11-10 17:06:12
  */
 
 #pragma once
@@ -35,8 +35,8 @@ class ThreadReduce : public LuisaModule
 
     template <typename ReduceOp>
     Var<Type4Byte> Reduce(const compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& input,
-                          ReduceOp  op,
-                          Type4Byte prefix)
+                          ReduceOp                                              op,
+                          const Var<Type4Byte>&                                 prefix)
     {
         compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD + 1> temp;
         temp[0] = prefix;
@@ -44,7 +44,7 @@ class ThreadReduce : public LuisaModule
         {
             temp[i + 1] = input[i];
         };
-        return Reduce<ITEMS_PER_THREAD + 1>(temp, op);
+        return ThreadReduce<Type4Byte, ITEMS_PER_THREAD + 1>().Reduce(temp, op);
     };
 };
 }  // namespace luisa::parallel_primitive

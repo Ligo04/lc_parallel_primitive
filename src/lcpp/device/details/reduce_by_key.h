@@ -2,11 +2,10 @@
  * @Author: Ligo 
  * @Date: 2025-10-21 22:12:15 
  * @Last Modified by: Ligo
- * @Last Modified time: 2025-11-07 00:25:12
+ * @Last Modified time: 2025-11-07 14:40:05
  */
 
 #pragma once
-#include "luisa/dsl/stmt.h"
 #include <cstddef>
 #include <luisa/dsl/sugar.h>
 #include <luisa/dsl/func.h>
@@ -15,7 +14,7 @@
 #include <luisa/dsl/resource.h>
 #include <luisa/runtime/buffer.h>
 #include <lcpp/common/type_trait.h>
-#include <lcpp/common/keyvaluepair.h>
+#include <lcpp/common/util_type.h>
 #include <lcpp/common/thread_operators.h>
 #include <lcpp/runtime/core.h>
 #include <lcpp/block/block_load.h>

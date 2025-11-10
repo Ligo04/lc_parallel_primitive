@@ -10,7 +10,7 @@
 #include <luisa/dsl/func.h>
 #include <luisa/dsl/var.h>
 #include <luisa/dsl/builtin.h>
-#include <lcpp/common/keyvaluepair.h>
+#include <lcpp/common/util_type.h>
 
 namespace luisa::parallel_primitive
 {

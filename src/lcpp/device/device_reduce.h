@@ -2,7 +2,7 @@
  * @Author: Ligo 
  * @Date: 2025-09-19 14:24:07 
  * @Last Modified by: Ligo
- * @Last Modified time: 2025-11-07 00:26:05
+ * @Last Modified time: 2025-11-07 17:39:28
  */
 
 #pragma once
@@ -22,7 +22,7 @@
 #include <cstddef>
 #include <lcpp/runtime/core.h>
 #include <lcpp/common/type_trait.h>
-#include <lcpp/common/keyvaluepair.h>
+#include <lcpp/common/util_type.h>
 #include <lcpp/common/thread_operators.h>
 #include <lcpp/block/block_reduce.h>
 #include <lcpp/block/block_scan.h>
@@ -67,12 +67,12 @@ class DeviceReduce : public LuisaModule
                 BufferView<Type4Byte> d_out,
                 size_t                num_item,
                 ReduceOp              reduce_op,
-                Type4Byte             init)
+                Type4Byte             initial_value)
     {
         size_t temp_storage_size = 0;
         get_temp_size_scan(temp_storage_size, m_block_size, ITEMS_PER_THREAD, num_item);
         Buffer<Type4Byte> temp_buffer = m_device.create_buffer<Type4Byte>(temp_storage_size);
-        reduce_array_recursive<Type4Byte>(cmdlist, temp_buffer.view(), d_in, d_out, num_item, 0, 0, reduce_op, init);
+        reduce_array_recursive<Type4Byte>(cmdlist, temp_buffer.view(), d_in, d_out, num_item, 0, 0, reduce_op, initial_value);
         stream << cmdlist.commit() << synchronize();
     }
 

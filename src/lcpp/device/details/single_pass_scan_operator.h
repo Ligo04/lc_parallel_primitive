@@ -5,20 +5,19 @@
  * @Last Modified time: 2025-11-07 00:09:45
  */
 #pragma once
-#include "lcpp/common/thread_operators.h"
-#include "lcpp/warp/warp_reduce.h"
-#include "luisa/core/basic_traits.h"
-#include "luisa/dsl/resource.h"
-#include "luisa/dsl/struct.h"
 #include <cstddef>
 #include <luisa/dsl/sugar.h>
 #include <luisa/dsl/func.h>
 #include <luisa/dsl/var.h>
 #include <luisa/dsl/builtin.h>
+#include <luisa/core/basic_traits.h>
+#include <luisa/dsl/resource.h>
+#include <luisa/dsl/struct.h>
 #include <lcpp/common/type_trait.h>
-#include <lcpp/common/keyvaluepair.h>
+#include <lcpp/common/util_type.h>
+#include <lcpp/common/thread_operators.h>
 #include <lcpp/runtime/core.h>
-
+#include <lcpp/warp/warp_reduce.h>
 
 namespace luisa::parallel_primitive
 {
@@ -307,12 +306,6 @@ class TilePrefixCallbackOp : public LuisaModule
 
         windows_aggregate =
             WarpReduceT().TailSegmentedReduce(value, tail_flag, SwizzleScanOp<ScanOpT>(scan_op));
-
-        // compute::device_log("process_windows: tile_index: {}, status: {}, value: {}, aggregate: {}",
-        //                     tile_index,
-        //                     predecessor_status,
-        //                     value,
-        //                     windows_aggregate);
     }
 };
 

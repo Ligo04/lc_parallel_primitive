@@ -14,7 +14,6 @@
 #include <luisa/dsl/builtin.h>
 #include <lcpp/runtime/core.h>
 #include <lcpp/common/type_trait.h>
-#include <lcpp/common/keyvaluepair.h>
 #include <lcpp/common/utils.h>
 #include <lcpp/runtime/core.h>
 
@@ -53,9 +52,7 @@ namespace details
 
 
         template <typename ScanOp>
-        void InclusiveScan(const Var<Type4Byte>& thread_input,
-                           Var<Type4Byte>&       inclusive_output,
-                           ScanOp                scan_op)
+        void InclusiveScan(const Var<Type4Byte>& thread_input, Var<Type4Byte>& inclusive_output, ScanOp scan_op)
         {
             compute::UInt lane_id   = compute::warp_lane_id();
             compute::UInt wave_size = compute::warp_lane_count();

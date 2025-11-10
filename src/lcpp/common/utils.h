@@ -2,7 +2,7 @@
  * @Author: Ligo 
  * @Date: 2025-10-22 17:17:43 
  * @Last Modified by: Ligo
- * @Last Modified time: 2025-11-06 21:24:06
+ * @Last Modified time: 2025-11-10 16:20:44
  */
 
 
@@ -12,7 +12,7 @@
 #include <typeindex>
 #include <luisa/dsl/builtin.h>
 #include <luisa/dsl/var.h>
-#include <lcpp/common/keyvaluepair.h>
+#include <lcpp/common/util_type.h>
 #include <lcpp/runtime/core.h>
 
 namespace luisa::parallel_primitive
@@ -43,6 +43,12 @@ static inline int floor_pow_2(int n)
     frexp((float)n, &exp);
     return 1 << (exp - 1);
 #endif
+}
+
+template <typename T>
+static constexpr inline T ceil_div(T a, T b) noexcept
+{
+    return (a + b - 1) / b;
 }
 
 template <NumericT Type4Byte, typename ReduceOp>

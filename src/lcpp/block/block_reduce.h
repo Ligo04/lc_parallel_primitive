@@ -2,7 +2,7 @@
  * @Author: Ligo 
  * @Date: 2025-09-28 16:54:51 
  * @Last Modified by: Ligo
- * @Last Modified time: 2025-10-22 17:04:16
+ * @Last Modified time: 2025-11-10 17:06:13
  */
 
 #pragma once
@@ -52,7 +52,7 @@ class BlockReduce : public LuisaModule
         Var<Type4Byte> result;
         if(Algorithm == DefaultBlockReduceAlgorithm::WARP_SHUFFLE)
         {
-            result = details::BlockReduceShfl<Type4Byte, BlockSize>().Reduce<true>(
+            result = details::BlockReduceShfl<Type4Byte, BlockSize>().template Reduce<true>(
                 m_shared_mem, thread_data, reduce_op, compute::block_size().x);
         }
         return result;
@@ -85,24 +85,15 @@ class BlockReduce : public LuisaModule
 
     Var<Type4Byte> Sum(const Var<Type4Byte>& d_in)
     {
-        return Reduce(d_in,
-                      [](const Var<Type4Byte>& a, const Var<Type4Byte>& b)
-                      { return a + b; });
+        return Reduce(d_in, [](const Var<Type4Byte>& a, const Var<Type4Byte>& b) { return a + b; });
     }
 
     Var<Type4Byte> Sum(const Var<Type4Byte>& d_in, compute::UInt num_item)
     {
-        return Reduce(
-            d_in,
-            [](const Var<Type4Byte>& a, const Var<Type4Byte>& b)
-            { return a + b; },
-            num_item);
+        return Reduce(d_in, [](const Var<Type4Byte>& a, const Var<Type4Byte>& b) { return a + b; }, num_item);
     }
 
-    Var<Type4Byte> Max(const Var<Type4Byte>& d_in)
-    {
-        return Reduce(d_in, luisa::compute::max);
-    }
+    Var<Type4Byte> Max(const Var<Type4Byte>& d_in) { return Reduce(d_in, luisa::compute::max); }
 
     Var<Type4Byte> Max(const Var<Type4Byte>& d_in, compute::UInt num_item)
     {
@@ -110,10 +101,7 @@ class BlockReduce : public LuisaModule
     }
 
 
-    Var<Type4Byte> Min(const Var<Type4Byte>& d_in)
-    {
-        return Reduce(d_in, luisa::compute::min);
-    }
+    Var<Type4Byte> Min(const Var<Type4Byte>& d_in) { return Reduce(d_in, luisa::compute::min); }
 
     Var<Type4Byte> Min(const Var<Type4Byte>& d_in, compute::UInt num_item)
     {
@@ -122,33 +110,25 @@ class BlockReduce : public LuisaModule
 
     template <typename ReduceOp = luisa::compute::Callable<Var<Type4Byte>(const Var<Type4Byte>&, const Var<Type4Byte>&)>>
     Var<Type4Byte> Reduce(const compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& thread_data,
-                          ReduceOp      op,
-                          compute::UInt num_item)
+                          ReduceOp                                              op,
+                          compute::UInt                                         num_item)
     {
-        Var<Type4Byte> thread_agg =
-            ThreadReduce<Type4Byte, ITEMS_PER_THREAD>().Reduce(thread_data, op);
+        Var<Type4Byte> thread_agg = ThreadReduce<Type4Byte, ITEMS_PER_THREAD>().Reduce(thread_data, op);
 
         return Reduce(thread_agg, op, num_item);
     };
 
-    Var<Type4Byte> Sum(const compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& d_in,
-                       compute::UInt num_item)
+    Var<Type4Byte> Sum(const compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& d_in, compute::UInt num_item)
     {
-        return Reduce(
-            d_in,
-            [](const Var<Type4Byte>& a, const Var<Type4Byte>& b)
-            { return a + b; },
-            num_item);
+        return Reduce(d_in, [](const Var<Type4Byte>& a, const Var<Type4Byte>& b) { return a + b; }, num_item);
     }
 
-    Var<Type4Byte> Max(const compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& d_in,
-                       compute::UInt num_item)
+    Var<Type4Byte> Max(const compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& d_in, compute::UInt num_item)
     {
         return Reduce(d_in, luisa::compute::max, num_item);
     }
 
-    Var<Type4Byte> Min(const compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& d_in,
-                       compute::UInt num_item)
+    Var<Type4Byte> Min(const compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& d_in, compute::UInt num_item)
     {
         return Reduce(d_in, luisa::compute::min, num_item);
     }

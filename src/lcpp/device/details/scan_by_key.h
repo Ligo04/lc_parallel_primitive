@@ -16,7 +16,7 @@
 #include <luisa/dsl/resource.h>
 #include <luisa/runtime/buffer.h>
 #include <lcpp/common/type_trait.h>
-#include <lcpp/common/keyvaluepair.h>
+#include <lcpp/common/util_type.h>
 #include <lcpp/common/thread_operators.h>
 #include <lcpp/runtime/core.h>
 #include <lcpp/block/block_load.h>
