@@ -28,6 +28,8 @@ int main(int argc, char* argv[])
     Device device = context.create_device("cuda");
 #elif __APPLE__
     Device device = context.create_device("metal");
+#else
+    Device device = context.create_device("cuda");
 #endif
     Stream      stream = device.create_stream();
     CommandList cmdlist;
