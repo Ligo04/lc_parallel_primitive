@@ -2,7 +2,7 @@
  * @Author: Ligo 
  * @Date: 2025-09-29 10:43:44 
  * @Last Modified by: Ligo
- * @Last Modified time: 2025-10-22 16:32:49
+ * @Last Modified time: 2025-11-11 10:53:17
  */
 
 #pragma once
@@ -22,7 +22,7 @@ enum class WarpReduceAlgorithm
     WARP_SHARED_MEMORY = 1
 };
 
-template <typename Type4Byte, size_t WARP_SIZE = 32, WarpReduceAlgorithm WarpReduceMethod = WarpReduceAlgorithm::WARP_SHUFFLE>
+template <typename Type4Byte, size_t WARP_SIZE = details::WARP_SIZE, WarpReduceAlgorithm WarpReduceMethod = WarpReduceAlgorithm::WARP_SHUFFLE>
 class WarpReduce : public LuisaModule
 {
   public:
@@ -58,8 +58,7 @@ class WarpReduce : public LuisaModule
     {
         return Reduce(
             lane_value,
-            [](const Var<Type4Byte>& a, const Var<Type4Byte>& b) noexcept
-            { return a + b; },
+            [](const Var<Type4Byte>& a, const Var<Type4Byte>& b) noexcept { return a + b; },
             valid_item);
     }
 
@@ -86,22 +85,19 @@ class WarpReduce : public LuisaModule
     Var<Type4Byte> HeadSegmentedReduce(const Var<Type4Byte>& d_in,
                                        const Var<FlagT>&     flag,
                                        ReduceOp              redecu_op,
-                                       compute::UInt valid_item = WARP_SIZE)
+                                       compute::UInt         valid_item = WARP_SIZE)
     {
         compute::set_warp_size(WARP_SIZE);
         Var<Type4Byte> result;
         if(WarpReduceMethod == WarpReduceAlgorithm::WARP_SHUFFLE)
         {
-            result = details::WarpReduceShfl<Type4Byte, WARP_SIZE>().SegmentReduce<true>(
-                d_in, flag, redecu_op, valid_item);
+            result = details::WarpReduceShfl<Type4Byte, WARP_SIZE>().SegmentReduce<true>(d_in, flag, redecu_op, valid_item);
         };
         return result;
     }
 
     template <typename FlagT>
-    Var<Type4Byte> HeadSegmentedSum(const Var<Type4Byte>& d_in,
-                                    const Var<FlagT>&     flag,
-                                    compute::UInt valid_item = WARP_SIZE)
+    Var<Type4Byte> HeadSegmentedSum(const Var<Type4Byte>& d_in, const Var<FlagT>& flag, compute::UInt valid_item = WARP_SIZE)
     {
         compute::set_warp_size(WARP_SIZE);
         Var<Type4Byte> result;
@@ -110,8 +106,7 @@ class WarpReduce : public LuisaModule
             result = details::WarpReduceShfl<Type4Byte, WARP_SIZE>().SegmentReduce<true>(
                 d_in,
                 flag,
-                [](const Var<Type4Byte>& a, const Var<Type4Byte>& b) noexcept
-                { return a + b; },
+                [](const Var<Type4Byte>& a, const Var<Type4Byte>& b) noexcept { return a + b; },
                 valid_item);
         };
         return result;
@@ -122,7 +117,7 @@ class WarpReduce : public LuisaModule
     Var<Type4Byte> TailSegmentedReduce(const Var<Type4Byte>& d_in,
                                        const Var<FlagT>&     flag,
                                        ReduceOp              redecu_op,
-                                       compute::UInt valid_item = WARP_SIZE)
+                                       compute::UInt         valid_item = WARP_SIZE)
     {
         compute::set_warp_size(WARP_SIZE);
         Var<Type4Byte> result;
@@ -136,9 +131,7 @@ class WarpReduce : public LuisaModule
 
 
     template <typename FlagT>
-    Var<Type4Byte> TailSegmentedSum(const Var<Type4Byte>& d_in,
-                                    const Var<FlagT>&     flag,
-                                    compute::UInt valid_item = WARP_SIZE)
+    Var<Type4Byte> TailSegmentedSum(const Var<Type4Byte>& d_in, const Var<FlagT>& flag, compute::UInt valid_item = WARP_SIZE)
     {
         compute::set_warp_size(WARP_SIZE);
         Var<Type4Byte> result;
@@ -147,8 +140,7 @@ class WarpReduce : public LuisaModule
             result = details::WarpReduceShfl<Type4Byte, WARP_SIZE>().template SegmentReduce<false>(
                 d_in,
                 flag,
-                [](const Var<Type4Byte>& a, const Var<Type4Byte>& b) noexcept
-                { return a + b; },
+                [](const Var<Type4Byte>& a, const Var<Type4Byte>& b) noexcept { return a + b; },
                 valid_item);
         };
         return result;

@@ -48,7 +48,7 @@ namespace details
         Var<Type4Byte> SegmentReduce(const Var<Type4Byte>& input,
                                      const Var<FlagT>&     flag,
                                      ReduceOp              redecu_op,
-                                     UInt valid_item = LOGIC_WARP_SIZE)
+                                     UInt                  valid_item = LOGIC_WARP_SIZE)
         {
             compute::UInt lane_id   = compute::warp_lane_id();
             compute::UInt wave_size = compute::warp_lane_count();
@@ -62,9 +62,8 @@ namespace details
             if constexpr(!IS_ARCH_WARP)
             {
                 compute::UInt member_mask = warp_mask<LOGIC_WARP_SIZE>(lane_id);
-                compute::UInt warp_id = lane_id / compute::UInt(LOGIC_WARP_SIZE);
-                warp_flags = (warp_flags & member_mask)
-                             >> (warp_id * UInt(LOGIC_WARP_SIZE));
+                compute::UInt warp_id     = lane_id / compute::UInt(LOGIC_WARP_SIZE);
+                warp_flags = (warp_flags & member_mask) >> (warp_id * UInt(LOGIC_WARP_SIZE));
             };
 
             warp_flags &= get_lane_mask_ge(lane_id, wave_size);

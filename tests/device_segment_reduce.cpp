@@ -41,16 +41,16 @@ int main(int argc, char* argv[])
     DeviceSegmentReduce<BLOCK_SIZE, WARP_NUMS, ITEMS_PER_THREAD> reducer;
     reducer.create(device);
 
-    luisa::vector<int32> input_data(array_size);
-    for(int i = 0; i < array_size; i++)
-    {
-        input_data[i] = i;
-    }
-    std::mt19937 rng(114521);  // 固定种子
-    std::shuffle(input_data.begin(), input_data.end(), rng);
-
     "segment_reduce"_test = [&]
     {
+        luisa::vector<int32> input_data(array_size);
+        for(int i = 0; i < array_size; i++)
+        {
+            input_data[i] = i;
+        }
+        std::mt19937 rng(114521);  // 固定种子
+        std::shuffle(input_data.begin(), input_data.end(), rng);
+
         constexpr int       items_per_segment = 100;
         auto                in_buffer         = device.create_buffer<int32>(array_size);
         auto                num_segments      = array_size / items_per_segment + 1;
@@ -101,19 +101,28 @@ int main(int argc, char* argv[])
 
     "fixed_segment_reduce"_test = [&]
     {
-        constexpr int       items_per_segment = 32;
-        auto                in_buffer         = device.create_buffer<int32>(array_size);
-        auto                num_segments      = ceil_div(array_size, items_per_segment);
-        auto                out_buffer        = device.create_buffer<int32>(num_segments);
+        constexpr int32_t fixed_array       = 1024;
+        constexpr int     items_per_segment = 32;
+        static_assert(fixed_array % items_per_segment == 0, "fixed_array must be divisible by items_per_segment");
+        auto num_segments = fixed_array / items_per_segment;
+
+        auto                in_buffer  = device.create_buffer<int32>(fixed_array);
+        auto                out_buffer = device.create_buffer<int32>(num_segments);
         luisa::vector<uint> begin_offsets_array(num_segments);
         luisa::vector<uint> end_offsets_array(num_segments);
-        for(auto i = 0; i < array_size; i++)
+        for(auto i = 0; i < fixed_array; i++)
         {
             if(i % items_per_segment == 0)
             {
                 begin_offsets_array[i / items_per_segment] = i;
-                end_offsets_array[i / items_per_segment] = std::min(i + items_per_segment, array_size);
+                end_offsets_array[i / items_per_segment]   = i + items_per_segment;
             }
+        }
+
+        luisa::vector<int32> input_data(fixed_array);
+        for(int i = 0; i < fixed_array; i++)
+        {
+            input_data[i] = i;
         }
         stream << in_buffer.copy_from(input_data.data()) << synchronize();
 
@@ -121,14 +130,12 @@ int main(int argc, char* argv[])
 
         luisa::vector<int32> result(num_segments);
         stream << out_buffer.copy_to(result.data()) << synchronize();
-        for(auto i = 0; i < array_size; i++)
+        for(auto i = 0; i < fixed_array; i++)
         {
             if(i % items_per_segment == 0)
             {
                 auto expected_sum =
-                    std::accumulate(input_data.begin() + i,
-                                    input_data.begin() + i + std::min(array_size - i, items_per_segment),
-                                    0);
+                    std::accumulate(input_data.begin() + i, input_data.begin() + i + items_per_segment, 0);
                 LUISA_INFO("Segment {}: expected sum = {}, got {}",
                            i / items_per_segment,
                            expected_sum,

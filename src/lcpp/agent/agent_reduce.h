@@ -2,15 +2,16 @@
  * @Author: Ligo
  * @Date: 2025-11-07 16:45:23
  * @Last Modified by: Ligo
- * @Last Modified time: 2025-11-10 18:03:08
+ * @Last Modified time: 2025-11-11 10:59:30
  */
 
 #pragma once
-#include "lcpp/block/block_reduce.h"
-#include "lcpp/thread/thread_reduce.h"
-#include "lcpp/warp/warp_reduce.h"
-#include "luisa/dsl/resource.h"
 #include <cstddef>
+#include <luisa/dsl/resource.h>
+#include <luisa/dsl/stmt.h>
+#include <lcpp/block/block_reduce.h>
+#include <lcpp/thread/thread_reduce.h>
+#include <lcpp/warp/warp_reduce.h>
 #include <lcpp/common/grid_even_shared.h>
 #include <lcpp/common/thread_operators.h>
 #include <lcpp/common/type_trait.h>
@@ -37,7 +38,7 @@ namespace details
                         TransformOp             transform_op,
                         UInt                    land_id)
             : m_smem_data(smem_data)
-            , m_wrapped_in(d_in)
+            , m_in_data(d_in)
             , m_reduce_op(reduce_op)
             , m_transform_op(transform_op)
             , m_land_id(land_id) {};
@@ -71,7 +72,6 @@ namespace details
             $else
             {
                 ConsumeFullTileRange(thread_aggregate, even_shared);
-
                 result = CollectiveReduceT().Reduce(thread_aggregate, m_reduce_op);
             };
             return result;
@@ -86,7 +86,7 @@ namespace details
             {
                 $if(thread_offset < valid_items)
                 {
-                    thread_aggregate = m_transform_op(m_wrapped_in.read(thread_offset + block_offset));
+                    thread_aggregate = m_transform_op(m_in_data.read(thread_offset + block_offset));
                     thread_offset += UInt(NUM_THREADS);
                 };
             }
@@ -94,7 +94,7 @@ namespace details
             $while(thread_offset < valid_items)
             {
                 // load data
-                Var<Type4Byte> data = m_wrapped_in.read(thread_offset + block_offset);
+                Var<Type4Byte> data = m_in_data.read(thread_offset + block_offset);
                 thread_aggregate    = m_reduce_op(thread_aggregate, m_transform_op(data));
                 thread_offset += UInt(NUM_THREADS);
             };
@@ -106,7 +106,8 @@ namespace details
             ArrayVar<Type4Byte, ITEMS_PER_THREAD> items;
             for(auto i = 0u; i < ITEMS_PER_THREAD; ++i)
             {
-                items[i] = m_transform_op(m_wrapped_in.read(block_offset + m_land_id + i * UInt(NUM_THREADS)));
+                UInt global_index = block_offset + m_land_id * UInt(ITEMS_PER_THREAD) + i;
+                items[i]          = m_transform_op(m_in_data.read(global_index));
             };
 
             if constexpr(IsFirstTile)
@@ -130,7 +131,6 @@ namespace details
                 return;
             };
             even_shared.block_offset += even_shared.block_stride;
-
             $while(even_shared.block_offset <= even_shared.block_end - UInt(NUM_THREADS * ITEMS_PER_THREAD))
             {
                 ConsumeFullTile<false>(thread_aggregate, even_shared.block_offset);
@@ -140,7 +140,6 @@ namespace details
                 };
                 even_shared.block_offset += even_shared.block_stride;
             };
-
             $if(even_shared.block_offset < even_shared.block_end)
             {
                 UInt valid_items = even_shared.block_end - even_shared.block_offset;
@@ -154,16 +153,16 @@ namespace details
         ReduceOp               m_reduce_op;
         UInt                   m_land_id;
 
-        BufferVar<Type4Byte>& m_wrapped_in;
+        BufferVar<Type4Byte>& m_in_data;
     };
 
-    template <typename Type4Byte, typename ReduceOp, typename TransformOp, size_t BLOCK_SIZE = details::BLOCK_SIZE, size_t WARP_SIZE = details::WARP_SIZE, size_t ITEMS_PER_THREAD = details::ITEMS_PER_THREAD>
+    template <typename Type4Byte, typename ReduceOp, typename TransformOp, size_t NUM_THREADS, size_t ITEMS_PER_THREAD, size_t WARP_SIZE = details::WARP_SIZE>
     class AgentReduce
-        : public AgentReduceImpl<Type4Byte, ReduceOp, TransformOp, BlockReduce<Type4Byte, BLOCK_SIZE, ITEMS_PER_THREAD, WARP_SIZE>, false, BLOCK_SIZE, ITEMS_PER_THREAD>
+        : public AgentReduceImpl<Type4Byte, ReduceOp, TransformOp, BlockReduce<Type4Byte, NUM_THREADS, ITEMS_PER_THREAD, WARP_SIZE>, false, NUM_THREADS, ITEMS_PER_THREAD>
     {
       public:
         using Base =
-            AgentReduceImpl<Type4Byte, ReduceOp, TransformOp, BlockReduce<Type4Byte, BLOCK_SIZE, ITEMS_PER_THREAD, WARP_SIZE>, false, BLOCK_SIZE, ITEMS_PER_THREAD>;
+            AgentReduceImpl<Type4Byte, ReduceOp, TransformOp, BlockReduce<Type4Byte, NUM_THREADS, ITEMS_PER_THREAD, WARP_SIZE>, false, NUM_THREADS, ITEMS_PER_THREAD>;
         AgentReduce(SmemTypePtr<Type4Byte>& smem_data,
                     BufferVar<Type4Byte>&   in,
                     ReduceOp                reduce_op,
@@ -171,18 +170,18 @@ namespace details
             : Base(smem_data, in, reduce_op, transform_op, thread_id().x) {};
     };
 
-    template <typename Type4Byte, typename ReduceOp, typename TransformOp, size_t WARP_NUMS = details::WARP_SIZE, size_t ITEMS_PER_THREAD = details::ITEMS_PER_THREAD>
+    template <typename Type4Byte, typename ReduceOp, typename TransformOp, size_t NUM_THREADS, size_t ITEMS_PER_THREAD>
     class AgentWarpReduce
-        : public AgentReduceImpl<Type4Byte, ReduceOp, TransformOp, WarpReduce<Type4Byte, WARP_NUMS>, true, WARP_NUMS, ITEMS_PER_THREAD>
+        : public AgentReduceImpl<Type4Byte, ReduceOp, TransformOp, WarpReduce<Type4Byte, NUM_THREADS>, true, NUM_THREADS, ITEMS_PER_THREAD>
     {
       public:
         using Base =
-            AgentReduceImpl<Type4Byte, ReduceOp, TransformOp, WarpReduce<Type4Byte, WARP_NUMS>, true, WARP_NUMS, ITEMS_PER_THREAD>;
+            AgentReduceImpl<Type4Byte, ReduceOp, TransformOp, WarpReduce<Type4Byte, NUM_THREADS>, true, NUM_THREADS, ITEMS_PER_THREAD>;
         AgentWarpReduce(SmemTypePtr<Type4Byte>& smem_data,
                         BufferVar<Type4Byte>&   in,
                         ReduceOp                reduce_op,
                         TransformOp             transform_op = IdentityOp())
-            : Base(smem_data, in, reduce_op, transform_op, thread_id().x % UInt(WARP_NUMS)) {};
+            : Base(smem_data, in, reduce_op, transform_op, thread_id().x % UInt(NUM_THREADS)) {};
     };
 }  // namespace details
 
