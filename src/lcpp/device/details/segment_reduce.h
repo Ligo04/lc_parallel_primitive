@@ -170,29 +170,30 @@ namespace details
 
 
     template <NumericT Type4Byte, size_t BLOCK_SIZE = details::BLOCK_SIZE>
-    class ArgSegmentReduce : public LuisaModule
+    class ArgSegmentReduceModule : public LuisaModule
     {
       public:
         using ArgConstructShaderT = Shader<1, Buffer<Type4Byte>, Buffer<IndexValuePairT<Type4Byte>>>;
 
         using ArgAssignShaderT =
-            Shader<1, Buffer<IndexValuePairT<Type4Byte>>, Buffer<Type4Byte>, Buffer<uint>>;
+            Shader<1, Buffer<IndexValuePairT<Type4Byte>>, Buffer<uint>, Buffer<uint>, Buffer<Type4Byte>>;
+
+        using ArgFixedSizeAssignShaderT =
+            Shader<1, Buffer<IndexValuePairT<Type4Byte>>, uint, Buffer<uint>, Buffer<Type4Byte>>;
+
 
         U<ArgConstructShaderT> compile_arg_construct_shader(Device& device)
         {
             U<ArgConstructShaderT> ms_arg_construct_shader = nullptr;
             lazy_compile(device,
                          ms_arg_construct_shader,
-                         [&](BufferVar<Type4Byte>                  arr_in,
-                             BufferVar<uint>                       d_begin_offsets,
-                             BufferVar<uint>                       d_end_offset,
-                             BufferVar<IndexValuePairT<Type4Byte>> g_kv_out)
+                         [&](BufferVar<Type4Byte> arr_in, BufferVar<IndexValuePairT<Type4Byte>> g_kv_out)
                          {
                              set_block_size(BLOCK_SIZE);
                              UInt global_id = block_id().x * block_size().x + thread_id().x;
 
                              Var<IndexValuePairT<Type4Byte>> initial{0, 0};
-                             initial.key   = global_id - d_begin_offsets.read(global_id);
+                             initial.key   = global_id;
                              initial.value = arr_in.read(global_id);
                              g_kv_out.write(global_id, initial);
                          });
@@ -205,17 +206,46 @@ namespace details
             lazy_compile(device,
                          ms_arg_assign_shader,
                          [&](BufferVar<IndexValuePairT<Type4Byte>> kvp_in,
-                             BufferVar<Type4Byte>                  value_out,
-                             BufferVar<uint>                       index_out)
+                             BufferVar<uint>                       d_begin_offset,
+                             BufferVar<uint>                       index_out,
+                             BufferVar<Type4Byte>                  value_out)
                          {
                              set_block_size(BLOCK_SIZE);
-                             UInt global_id = block_id().x * block_size().x + thread_id().x;
+                             UInt bid          = block_id().x;
+                             UInt begin_offset = d_begin_offset.read(bid);
+                             $if(thread_id().x == 0)
+                             {
+                                 UInt global_id = begin_offset + thread_id().x;
 
-                             Var<IndexValuePairT<Type4Byte>> kvp = kvp_in.read(global_id);
-                             index_out.write(global_id, kvp.key);
-                             value_out.write(global_id, kvp.value);
+                                 Var<IndexValuePairT<Type4Byte>> kvp = kvp_in.read(bid);
+                                 index_out.write(bid, kvp.key - begin_offset);
+                                 value_out.write(bid, kvp.value);
+                             };
                          });
             return ms_arg_assign_shader;
+        }
+
+
+        U<ArgFixedSizeAssignShaderT> compile_arg_fixed_size_assign_shader(Device& device)
+        {
+            U<ArgFixedSizeAssignShaderT> ms_arg_fixed_size_assign_shader = nullptr;
+            lazy_compile(device,
+                         ms_arg_fixed_size_assign_shader,
+                         [&](BufferVar<IndexValuePairT<Type4Byte>> kvp_in,
+                             UInt                                  segment_size,
+                             BufferVar<uint>                       index_out,
+                             BufferVar<Type4Byte>                  value_out)
+                         {
+                             set_block_size(BLOCK_SIZE);
+                             UInt bid = block_id().x;
+                             $if(thread_id().x == 0)
+                             {
+                                 Var<IndexValuePairT<Type4Byte>> kvp = kvp_in.read(bid);
+                                 index_out.write(bid, kvp.key - bid * segment_size);
+                                 value_out.write(bid, kvp.value);
+                             };
+                         });
+            return ms_arg_fixed_size_assign_shader;
         }
     };
 

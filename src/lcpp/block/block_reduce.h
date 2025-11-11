@@ -26,7 +26,7 @@ enum class DefaultBlockReduceAlgorithm
     WARP_SHUFFLE
 };
 
-template <NumericT Type4Byte, size_t BlockSize = 256, size_t ITEMS_PER_THREAD = 2, size_t WARP_SIZE = 32, DefaultBlockReduceAlgorithm Algorithm = DefaultBlockReduceAlgorithm::WARP_SHUFFLE>
+template <typename Type4Byte, size_t BlockSize = 256, size_t ITEMS_PER_THREAD = 2, size_t WARP_SIZE = 32, DefaultBlockReduceAlgorithm Algorithm = DefaultBlockReduceAlgorithm::WARP_SHUFFLE>
 class BlockReduce : public LuisaModule
 {
   public:

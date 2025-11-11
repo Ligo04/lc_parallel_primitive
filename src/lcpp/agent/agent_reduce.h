@@ -28,7 +28,7 @@ namespace luisa::parallel_primitive
 namespace details
 {
     using namespace luisa::compute;
-    template <NumericT Type4Byte, typename ReduceOp, typename TransformOp, typename CollectiveReduceT, bool IsWarpReduction, size_t NUM_THREADS, size_t ITEMS_PER_THREAD>
+    template <typename Type4Byte, typename ReduceOp, typename TransformOp, typename CollectiveReduceT, bool IsWarpReduction, size_t NUM_THREADS, size_t ITEMS_PER_THREAD>
     class AgentReduceImpl : public LuisaModule
     {
       public:
@@ -59,7 +59,7 @@ namespace details
             $if(even_shared.block_end - even_shared.block_offset < TILE_ITEMS)
             {
                 // empty segment
-                thread_aggregate = def<Type4Byte>(0);
+
                 UInt valid_items = even_shared.block_end - even_shared.block_offset;
                 ConsumePartialTile<true>(thread_aggregate, even_shared.block_offset, valid_items);
 
