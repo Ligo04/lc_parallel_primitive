@@ -2,7 +2,7 @@
  * @Author: Ligo 
  * @Date: 2025-10-22 17:17:43 
  * @Last Modified by: Ligo
- * @Last Modified time: 2025-11-10 16:20:44
+ * @Last Modified time: 2025-11-12 22:26:12
  */
 
 
@@ -46,10 +46,11 @@ static inline int floor_pow_2(int n)
 }
 
 template <typename T>
-static constexpr inline T ceil_div(T a, T b) noexcept
+static inline T ceil_div(T a, T b) noexcept
 {
     return (a + b - 1) / b;
 }
+
 
 template <NumericT Type4Byte, typename ReduceOp>
 luisa::string get_type_and_op_desc(ReduceOp op)
@@ -92,8 +93,8 @@ luisa::string get_type_and_op_desc(ReduceOp op)
 template <NumericT Type4Byte, typename ReduceOp, typename TransformOp>
 luisa::string get_type_and_op_desc(ReduceOp op, TransformOp transform_op)
 {
-    luisa::string_view key_desc          = luisa::compute::Type::of<Type4Byte>()->description();
     luisa::string_view reduce_op_desc    = std::type_index(typeid(op)).name();
+    luisa::string_view key_desc          = luisa::compute::Type::of<Type4Byte>()->description();
     luisa::string_view transform_op_desc = std::type_index(typeid(transform_op)).name();
 
     return luisa::string(key_desc) + "+" + luisa::string(reduce_op_desc) + "+" + luisa::string(transform_op_desc);

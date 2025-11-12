@@ -9,7 +9,6 @@
 #include <type_traits>
 
 template <typename T>
-static constexpr bool is_numeric_v =
-    std::is_integral_v<T> || std::is_floating_point_v<T>;
+static constexpr bool is_numeric_v = std::is_integral_v<T> || std::is_floating_point_v<T>;
 template <typename T>
 concept NumericT = is_numeric_v<T>;

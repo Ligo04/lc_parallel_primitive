@@ -2,7 +2,7 @@
  * @Author: Ligo 
  * @Date: 2025-11-10 16:01:44 
  * @Last Modified by: Ligo
- * @Last Modified time: 2025-11-11 10:26:29
+ * @Last Modified time: 2025-11-12 22:23:19
  */
 
 
@@ -56,5 +56,32 @@ struct Policy_hub
   public:
     using SmallReducePolicy =
         AgentWarpReducePolicy<nominal_4b_large_threads_per_block, small_threads_per_warp, nominal_4b_small_items_per_thread, Type>;
+};
+
+
+template <typename KeyType>
+struct OneSweepSmallKeyTunedPolicy
+{
+    static constexpr bool ONESWEEP            = true;
+    static constexpr uint ONESWEEP_RAIDX_BITS = 8;
+};
+
+
+template <int BlockThreads, int PixelsPerThread, bool RleCompress, bool WorkStealing, int VecSize = 4>
+struct AgentHistogramPolicy
+{
+    /// Threads per thread block
+    static constexpr int BLOCK_THREADS = BlockThreads;
+    /// Pixels per thread (per tile of input)
+    static constexpr int PIXELS_PER_THREAD = PixelsPerThread;
+
+    /// Whether to perform localized RLE to compress samples before histogramming
+    static constexpr bool IS_RLE_COMPRESS = RleCompress;
+
+    /// Whether to dequeue tiles from a global work queue
+    static constexpr bool IS_WORK_STEALING = WorkStealing;
+
+    /// Vector size for samples loading (1, 2, 4)
+    static constexpr int VEC_SIZE = VecSize;
 };
 }  // namespace luisa::parallel_primitive

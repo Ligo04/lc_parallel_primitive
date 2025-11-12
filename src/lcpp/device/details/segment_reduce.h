@@ -2,19 +2,17 @@
  * @Author: Ligo 
  * @Date: 2025-11-07 14:37:01 
  * @Last Modified by: Ligo
- * @Last Modified time: 2025-11-11 10:52:57
+ * @Last Modified time: 2025-11-12 14:59:19
  */
 
 
 #pragma once
-#include "luisa/dsl/resource.h"
-#include "luisa/dsl/stmt.h"
-#include "luisa/runtime/buffer.h"
 #include <cstddef>
 #include <luisa/dsl/sugar.h>
 #include <luisa/dsl/func.h>
 #include <luisa/dsl/var.h>
 #include <luisa/dsl/builtin.h>
+#include <luisa/dsl/resource.h>
 #include <lcpp/agent/agent_reduce.h>
 #include <lcpp/agent/policy.h>
 #include <lcpp/common/util_type.h>

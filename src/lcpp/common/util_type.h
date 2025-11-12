@@ -2,7 +2,7 @@
  * @Author: Ligo 
  * @Date: 2025-09-26 15:47:22 
  * @Last Modified by: Ligo
- * @Last Modified time: 2025-11-07 16:46:18
+ * @Last Modified time: 2025-11-13 00:20:19
  */
 
 
@@ -57,29 +57,29 @@ using IndexValuePairT = KeyValuePair<luisa::uint, Type4Byte>;
 template <typename T>
 struct DoubleBuffer
 {
-    compute::BufferVar<T> d_buffer[2];
-    compute::Int          selector;
+    compute::BufferView<T> d_buffer[2];
+    int                    selector;
 
     DoubleBuffer() = default;
 
-    DoubleBuffer(compute::BufferVar<T> d_current, compute::BufferVar<T> d_alternate) noexcept
+    DoubleBuffer(compute::BufferView<T> d_current, compute::BufferView<T> d_alternate) noexcept
         : d_buffer{d_current, d_alternate}
         , selector{0}
     {
     }
 
-    [[nodiscard]] compute::BufferVar<T> current() noexcept { return d_buffer[selector]; }
+    [[nodiscard]] compute::BufferView<T> current() noexcept { return d_buffer[selector]; }
 
-    [[nodiscard]] compute::BufferVar<T> alternate() noexcept { return d_buffer[selector ^ 1]; };
+    [[nodiscard]] compute::BufferView<T> alternate() noexcept { return d_buffer[selector ^ 1]; };
 };
 
 
 enum class Category : uint
 {
-    NOT_A_NUMBER      = 0,
-    SIGNED_INTERGER   = 1,
-    UNSIGNED_INTERGER = 2,
-    FLOATING_POINT    = 3
+    NOT_A_NUMBER     = 0u,
+    SIGNED_INTEGER   = 1u,
+    UNSIGNED_INTEGER = 2u,
+    FLOATING_POINT   = 3u
 };
 namespace details
 {
@@ -95,16 +95,127 @@ namespace details
     };
 
     template <typename _UnsignedBits, typename T>
-    struct BaseTraits<Category::UNSIGNED_INTERGER, false, _UnsignedBits, T>
+    struct BaseTraits<Category::UNSIGNED_INTEGER, true, _UnsignedBits, T>
     {
+        using UnsignedBits                       = _UnsignedBits;
+        static constexpr UnsignedBits LOWEST_KEY = UnsignedBits(0);
+        static constexpr UnsignedBits MAX_KEY    = UnsignedBits(-1);
+
+        static compute::Var<UnsignedBits> TwiddleIn(const compute::Var<UnsignedBits>& key)
+        {
+            return key;
+        }
+        static compute::Var<UnsignedBits> TwiddleOut(const compute::Var<UnsignedBits>& key)
+        {
+            return key;
+        }
+
       private:
         friend struct is_primite_impl;
-
-        static constexpr bool is_primitive = false;
+        static constexpr bool is_primitive = true;
     };
 
+    template <typename _UnsignedBits, typename T>
+    struct BaseTraits<Category::SIGNED_INTEGER, true, _UnsignedBits, T>
+    {
+        using UnsignedBits = _UnsignedBits;
+        static constexpr UnsignedBits HIGH_BIT = UnsignedBits(1) << ((sizeof(UnsignedBits) * 8) - 1);
+        static constexpr UnsignedBits LOWEST_KEY = HIGH_BIT;
+        static constexpr UnsignedBits MAX_KEY    = UnsignedBits(-1) ^ HIGH_BIT;
 
+        static compute::Var<UnsignedBits> TwiddleIn(const compute::Var<UnsignedBits>& key)
+        {
+            return key ^ compute::Var<UnsignedBits>(HIGH_BIT);
+        }
+        static compute::Var<UnsignedBits> TwiddleOut(const compute::Var<UnsignedBits>& key)
+        {
+            return key ^ compute::Var<UnsignedBits>(HIGH_BIT);
+        }
+
+      private:
+        friend struct is_primite_impl;
+        static constexpr bool is_primitive = true;
+    };
+
+    template <typename _UnsignedBits, typename T>
+    struct BaseTraits<Category::FLOATING_POINT, true, _UnsignedBits, T>
+    {
+        using UnsignedBits = _UnsignedBits;
+        static constexpr UnsignedBits HIGH_BIT = UnsignedBits(1) << ((sizeof(UnsignedBits) * 8) - 1);
+        static constexpr UnsignedBits LOWEST_KEY = UnsignedBits(-1);
+        static constexpr UnsignedBits MAX_KEY    = UnsignedBits(-1) ^ HIGH_BIT;
+
+        static compute::Var<UnsignedBits> TwiddleIn(const compute::Var<UnsignedBits>& key)
+        {
+            auto mask = (key & compute::Var<UnsignedBits>(HIGH_BIT)) ?
+                            compute::Var<UnsignedBits>(-1) :
+                            compute::Var<UnsignedBits>(HIGH_BIT);
+            return key ^ mask;
+        }
+        static compute::Var<UnsignedBits> TwiddleOut(const compute::Var<UnsignedBits>& key)
+        {
+            auto mask = (key & compute::Var<UnsignedBits>(HIGH_BIT)) ?
+                            compute::Var<UnsignedBits>(-1) :
+                            compute::Var<UnsignedBits>(HIGH_BIT);
+            return key ^ mask;
+        }
+
+      private:
+        friend struct is_primite_impl;
+        static constexpr bool is_primitive = true;
+    };
 }  // namespace details
+
+template <Category _CATEGORY, bool _PRIMITIVE, typename _UnsignedBits, typename T>
+using BaseTraits = details::BaseTraits<_CATEGORY, _PRIMITIVE, _UnsignedBits, T>;
+
+template <typename T>
+struct NumericTraits : BaseTraits<Category::NOT_A_NUMBER, false, T, T>
+{
+};
+template <>
+struct NumericTraits<char>
+    : BaseTraits<(std::numeric_limits<char>::is_signed) ? Category::SIGNED_INTEGER : Category::UNSIGNED_INTEGER, true, unsigned char, char>
+{
+};
+template <>
+struct NumericTraits<signed char> : BaseTraits<Category::SIGNED_INTEGER, true, uchar, signed char>
+{
+};
+template <>
+struct NumericTraits<short> : BaseTraits<Category::SIGNED_INTEGER, true, unsigned short, short>
+{
+};
+template <>
+struct NumericTraits<int> : BaseTraits<Category::SIGNED_INTEGER, true, uint, int>
+{
+};
+template <>
+struct NumericTraits<long> : BaseTraits<Category::SIGNED_INTEGER, true, ulong, long>
+{
+};
+template <>
+struct NumericTraits<slong> : BaseTraits<Category::SIGNED_INTEGER, true, ulong, slong>
+{
+};
+template <>
+struct NumericTraits<uchar> : BaseTraits<Category::UNSIGNED_INTEGER, true, uchar, uchar>
+{
+};
+
+template <>
+struct NumericTraits<uint> : BaseTraits<Category::UNSIGNED_INTEGER, true, uint, uint>
+{
+};
+template <>
+struct NumericTraits<ulong> : BaseTraits<Category::UNSIGNED_INTEGER, true, ulong, ulong>
+{
+};
+// clang-format on
+
+template <typename T>
+using Traits = NumericTraits<std::remove_cv_t<T>>;
+
 }  // namespace luisa::parallel_primitive
 
 #define LUISA_KEY_VALUE_PAIR_TEMPLATE() template <NumericT KeyType, NumericT ValueType>
