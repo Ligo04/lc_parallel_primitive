@@ -6,9 +6,7 @@
  */
 
 #pragma once
-#include "luisa/dsl/struct.h"
 #include <algorithm>
-#include <cmath>
 #include <cstddef>
 #include <luisa/dsl/resource.h>
 #include <luisa/dsl/stmt.h>
@@ -82,7 +80,6 @@ namespace details
 
         void Init()
         {
-
             // Initialize shared memory counters to zero
             $for(bin, thread_id().x, UInt(RADIX_DIGITS), UInt(BLOCK_SIZE))
             {
@@ -102,21 +99,21 @@ namespace details
         void LoadTileKeys(UInt tile_offset, ArrayVar<bit_ordered_type, ITEMS_PER_THREAD>& keys)
         {
             Bool full_tile = (num_items - tile_offset >= UInt(TILE_ITEMS));
+            ArrayVar<KeyType, ITEMS_PER_THREAD> temp_keys;
             $if(full_tile)
             {
                 // load direct striped
-                LoadDirectStriped<BLOCK_SIZE, bit_ordered_type, ITEMS_PER_THREAD>(
-                    thread_id().x, d_keys_in, tile_offset, keys);
+                LoadDirectStriped<BLOCK_SIZE, KeyType, ITEMS_PER_THREAD>(thread_id().x, d_keys_in, tile_offset, temp_keys);
             }
             $else
             {
-                LoadDirectStriped<BLOCK_SIZE, bit_ordered_type, ITEMS_PER_THREAD>(
-                    thread_id().x, d_keys_in, tile_offset, keys, num_items - tile_offset, Twiddle::DefaultKey());
+                LoadDirectStriped<BLOCK_SIZE, KeyType, ITEMS_PER_THREAD>(
+                    thread_id().x, d_keys_in, tile_offset, temp_keys, num_items - tile_offset, Twiddle::DefaultKey());
             };
 
             for(auto i = 0u; i < ITEMS_PER_THREAD; ++i)
             {
-                keys[i] = Twiddle::In(keys[i]);
+                keys[i] = Twiddle::In(Var<bit_ordered_type>(temp_keys[i]));
             }
         }
 
@@ -135,6 +132,7 @@ namespace details
                     UInt index = pass * UInt(RADIX_DIGITS) * UInt(NUM_PARTS) + bin * UInt(NUM_PARTS) + part;
                     m_shared_bins->atomic(index).fetch_add(1u);
                 }
+                pass += 1;
             };
         }
 
@@ -152,8 +150,6 @@ namespace details
                                      + bin * UInt(NUM_PARTS) + UInt(part);
                         local_counts[part] = m_shared_bins->read(index);
                     }
-
-
                     UInt count = ThreadReduce<uint, NUM_PARTS>().Reduce(
                         local_counts, [](const UInt& a, const UInt& b) { return a + b; });
 
@@ -207,14 +203,3 @@ namespace details
     };
 };  // namespace details
 }  // namespace luisa::parallel_primitive
-
-
-// #define LUISA_RADIX_SORT_HISTOGRAM_TEMSTORAGE_TEMPLATE()                                           \
-//     template <NumericT ShmemAtomicCounterT, size_t MAX_NUM_PASSES, size_t RADIX_DIGITS, size_t NUM_PARTS>
-
-// #define LUISA_RADIX_SORT_HISTOGRAM_TEMSTORAGE_TYPE()                                               \
-//     luisa::parallel_primitive::details::AgentRadixSortTempStorage<ShmemAtomicCounterT, MAX_NUM_PASSES, RADIX_DIGITS, NUM_PARTS>
-
-// LUISA_TEMPLATE_STRUCT(LUISA_RADIX_SORT_HISTOGRAM_TEMSTORAGE_TEMPLATE,
-//                       LUISA_RADIX_SORT_HISTOGRAM_TEMSTORAGE_TYPE,
-//                       bin){};

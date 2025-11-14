@@ -14,11 +14,54 @@
 
 namespace luisa::parallel_primitive
 {
+
 enum class BlockStoreAlgorithm
 {
     BLOCK_STORE_DIRECT    = 0,
     BLOCK_STORE_TRANSPOSE = 1
 };
+
+
+template <typename T, int ItemsPerThread, size_t WARP_SIZE = details::BLOCK_SIZE>
+void StoreDirectWarpStriped(compute::UInt                               linear_tid,
+                            compute::BufferVar<T>&                      block_itr,
+                            compute::UInt                               global_offset,
+                            const compute::ArrayVar<T, ItemsPerThread>& items)
+{
+    compute::UInt tid         = linear_tid & compute::UInt(WARP_SIZE - 1);
+    compute::UInt wid         = linear_tid >> compute::log2(compute::UInt(WARP_SIZE));
+    compute::UInt warp_offset = wid * compute::UInt(WARP_SIZE * ItemsPerThread);
+
+    compute::UInt thread_offset = global_offset + warp_offset + tid;
+    // Store directly in warp-striped order
+    for(auto item = 0; item < ItemsPerThread; item++)
+    {
+        block_itr.write(thread_offset + (item * compute::UInt(WARP_SIZE)), items[item]);
+    }
+}
+
+template <typename T, int ItemsPerThread, size_t WARP_SIZE = details::BLOCK_SIZE>
+void StoreDirectWarpStriped(compute::UInt                               linear_tid,
+                            compute::BufferVar<T>&                      block_itr,
+                            compute::UInt                               global_offset,
+                            const compute::ArrayVar<T, ItemsPerThread>& items,
+                            compute::UInt                               valid_item)
+{
+    compute::UInt tid         = linear_tid & compute::UInt(WARP_SIZE - 1);
+    compute::UInt wid         = linear_tid >> compute::log2(compute::UInt(WARP_SIZE));
+    compute::UInt warp_offset = wid * compute::UInt(WARP_SIZE * ItemsPerThread);
+
+    compute::UInt thread_offset = global_offset + warp_offset + tid;
+    // Store directly in warp-striped order
+    for(auto item = 0; item < ItemsPerThread; item++)
+    {
+        $if(warp_offset + tid + (item * compute::UInt(WARP_SIZE)) < valid_item)
+        {
+            block_itr.write(thread_offset + (item * compute::UInt(WARP_SIZE)), items[item]);
+        };
+    }
+}
+
 
 template <typename Type4Byte, size_t BlockSize = 256, size_t ITEMS_PER_THREAD = 2, BlockStoreAlgorithm DefaultStoreAlgorithm = BlockStoreAlgorithm::BLOCK_STORE_DIRECT>
 class BlockStore : public LuisaModule
@@ -34,16 +77,16 @@ class BlockStore : public LuisaModule
 
   public:
     void Store(const compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& thread_data,
-               const compute::BufferVar<Type4Byte>& d_out,
-               compute::UInt                        block_item_start)
+               const compute::BufferVar<Type4Byte>&                  d_out,
+               compute::UInt                                         block_item_start)
     {
         Store(thread_data, d_out, block_item_start, compute::UInt(BlockSize * ITEMS_PER_THREAD));
     }
 
     void Store(const compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& thread_data,
-               const compute::BufferVar<Type4Byte>& d_out,
-               compute::UInt                        block_item_start,
-               compute::UInt                        block_item_end)
+               const compute::BufferVar<Type4Byte>&                  d_out,
+               compute::UInt                                         block_item_start,
+               compute::UInt                                         block_item_end)
     {
         using namespace luisa::compute;
         luisa::compute::set_block_size(BlockSize);
@@ -56,9 +99,9 @@ class BlockStore : public LuisaModule
     };
 
   private:
-    void StoreDirectedBlocked(compute::UInt linear_tid,
+    void StoreDirectedBlocked(compute::UInt                                         linear_tid,
                               const compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& thread_data,
-                              const compute::BufferVar<Type4Byte>& d_out,
+                              const compute::BufferVar<Type4Byte>&                  d_out,
                               compute::UInt block_item_start,
                               compute::UInt block_item_end)
     {

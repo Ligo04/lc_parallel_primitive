@@ -16,6 +16,16 @@ namespace luisa::parallel_primitive
 // shared memory per block limit 48KB
 static constexpr uint max_smem_per_block = 48 * 1024;
 
+template <uint Nominal4ByteBlockThreads, uint Nominal4ByteItemsPerThread, typename T>
+struct RegBoundScaling
+{
+    static constexpr int ITEMS_PER_THREAD =
+        std::max(1u, Nominal4ByteItemsPerThread * 4u / std::max(4u, uint{sizeof(T)}));
+    static constexpr int BLOCK_THREADS =
+        std::min(Nominal4ByteBlockThreads,
+                 ceil_div(uint{max_smem_per_block} / (uint{sizeof(T)} * ITEMS_PER_THREAD), 32u) * 32u);
+};
+
 template <uint Nominal4ByteBlockThreads, uint Nominal4ByteItemsPerThread, typename Type>
 struct MemBoundScaling
 {

@@ -2,7 +2,7 @@
  * @Author: Ligo 
  * @Date: 2025-10-22 17:17:43 
  * @Last Modified by: Ligo
- * @Last Modified time: 2025-11-12 22:26:12
+ * @Last Modified time: 2025-11-13 16:59:59
  */
 
 
@@ -50,6 +50,19 @@ static inline T ceil_div(T a, T b) noexcept
 {
     return (a + b - 1) / b;
 }
+
+template <int N, int CURRENT_VAL = N, int COUNT = 0>
+struct Log2
+{
+    /// Static logarithm value
+    static constexpr int VALUE = Log2<N, (CURRENT_VAL >> 1), COUNT + 1>::VALUE;
+};
+
+template <int N, int COUNT>
+struct Log2<N, 0, COUNT>
+{
+    static constexpr int VALUE = (1 << (COUNT - 1) < N) ? COUNT : COUNT - 1;
+};
 
 
 template <NumericT Type4Byte, typename ReduceOp>

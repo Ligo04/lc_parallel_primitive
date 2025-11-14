@@ -32,8 +32,8 @@ int main(int argc, char* argv[])
     Stream      stream = device.create_stream();
     CommandList cmdlist;
 
-    constexpr int32_t BLOCK_SIZE       = 256;
-    constexpr int32_t ITEMS_PER_THREAD = 2;
+    constexpr int32_t BLOCK_SIZE       = 128;
+    constexpr int32_t ITEMS_PER_THREAD = 4;
     constexpr int32_t WARP_NUMS        = 32;
 
     DeviceRadixSort<BLOCK_SIZE, WARP_NUMS, ITEMS_PER_THREAD> radixsorter;

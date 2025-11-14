@@ -2,7 +2,7 @@
  * @Author: Ligo 
  * @Date: 2025-09-28 15:37:17 
  * @Last Modified by: Ligo
- * @Last Modified time: 2025-11-06 22:13:32
+ * @Last Modified time: 2025-11-13 18:19:36
  */
 #pragma once
 #include <luisa/dsl/var.h>
@@ -178,6 +178,7 @@ class BlockScan : public LuisaModule
             };
         };
     }
+
 
     template <typename ScanOp, typename BlockPrefixCallbackOp>
     void ExclusiveScan(const compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& thread_datas,
@@ -355,7 +356,7 @@ class BlockScan : public LuisaModule
             thread_data,
             exclusive_out,
             [](const Var<Type4Byte>& a, const Var<Type4Byte>& b) { return a + b; },
-            Type4Byte(0));
+            Var<Type4Byte>(0));
     }
     void ExclusiveSum(const Var<Type4Byte>& thread_data, Var<Type4Byte>& exclusive_out, Var<Type4Byte>& block_aggregate)
     {
@@ -364,7 +365,7 @@ class BlockScan : public LuisaModule
             exclusive_out,
             block_aggregate,
             [](const Var<Type4Byte>& a, const Var<Type4Byte>& b) { return a + b; },
-            Type4Byte(0));
+            Var<Type4Byte>(0));
     }
 
     void ExclusiveSum(const compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& thread_data,
@@ -374,7 +375,7 @@ class BlockScan : public LuisaModule
             thread_data,
             exclusive_out,
             [](const Var<Type4Byte>& a, const Var<Type4Byte>& b) { return a + b; },
-            Type4Byte(0));
+            Var<Type4Byte>(0));
     }
 
     void ExclusiveSum(const compute::ArrayVar<Type4Byte, ITEMS_PER_THREAD>& thread_data,
@@ -386,7 +387,7 @@ class BlockScan : public LuisaModule
             exclusive_out,
             block_aggregate,
             [](const Var<Type4Byte>& a, const Var<Type4Byte>& b) { return a + b; },
-            Type4Byte(0));
+            Var<Type4Byte>(0));
     }
 
     void InclusiveSum(const Var<Type4Byte>& thread_data, Var<Type4Byte>& inclusive_out)

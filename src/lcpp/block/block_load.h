@@ -2,15 +2,14 @@
  * @Author: Ligo 
  * @Date: 2025-10-14 14:01:20 
  * @Last Modified by: Ligo
- * @Last Modified time: 2025-11-12 22:44:30
+ * @Last Modified time: 2025-11-13 16:31:58
  */
 #pragma once
 
-#include "luisa/dsl/resource.h"
-#include "luisa/runtime/buffer.h"
 #include <cstddef>
 #include <luisa/dsl/var.h>
 #include <luisa/dsl/sugar.h>
+#include <luisa/dsl/resource.h>
 #include <lcpp/common/type_trait.h>
 #include <lcpp/runtime/core.h>
 
@@ -22,6 +21,8 @@ enum class BlockLoadAlgorithm
     BLOCK_LOAD_DIRECT    = 0,
     BLOCK_LOAD_TRANSPOSE = 1
 };
+
+using namespace luisa::compute;
 
 template <uint BlockThreads, typename T, size_t ItemsPerThread>
 void LoadDirectStriped(compute::UInt                         linear_tid,
@@ -58,13 +59,68 @@ void LoadDirectStriped(compute::UInt                         linear_tid,
                        compute::UInt                         tile_offset,
                        compute::ArrayVar<T, ItemsPerThread>& dst_items,
                        compute::UInt                         block_item_end,
-                       const compute::Var<T>&                default_value)
+                       compute::Var<T>                       default_value)
 {
     for(auto i = 0; i < ItemsPerThread; i++)
     {
         dst_items[i] = default_value;
     }
     LoadDirectStriped<BlockThreads, T, ItemsPerThread>(linear_tid, block_src_it, tile_offset, dst_items, block_item_end);
+}
+
+
+template <typename T, size_t ItemsPerThread, size_t WARP_SIZE = details::BLOCK_SIZE>
+void LoadDirectWarpStriped(compute::UInt                         linear_tid,
+                           const compute::BufferVar<T>&          block_src_it,
+                           compute::UInt                         tile_offset,
+                           compute::ArrayVar<T, ItemsPerThread>& dst_items)
+{
+    compute::UInt tid         = linear_tid & compute::UInt(WARP_SIZE - 1);
+    compute::UInt wid         = linear_tid >> compute::log2(compute::UInt(WARP_SIZE));
+    compute::UInt warp_offset = wid * compute::UInt(WARP_SIZE * ItemsPerThread);
+
+    // Load directly in warp-striped order
+    for(int i = 0; i < ItemsPerThread; i++)
+    {
+        dst_items[i] = block_src_it.read(tile_offset + warp_offset + tid + (i * compute::UInt(WARP_SIZE)));
+    }
+}
+
+
+template <typename T, size_t ItemsPerThread, size_t WARP_SIZE = details::BLOCK_SIZE>
+void LoadDirectWarpStriped(compute::UInt                         linear_tid,
+                           const compute::BufferVar<T>&          block_src_it,
+                           compute::UInt                         tile_offset,
+                           compute::ArrayVar<T, ItemsPerThread>& dst_items,
+                           compute::UInt                         block_item_end)
+{
+    compute::UInt tid         = linear_tid & compute::UInt(WARP_SIZE - 1);
+    compute::UInt wid         = linear_tid >> compute::log2(compute::UInt(WARP_SIZE));
+    compute::UInt warp_offset = wid * compute::UInt(WARP_SIZE * ItemsPerThread);
+
+    for(auto i = 0; i < ItemsPerThread; i++)
+    {
+        auto src_pos = tile_offset + warp_offset + tid * compute::UInt(WARP_SIZE);
+        $if(src_pos < block_item_end)
+        {
+            dst_items[i] = block_src_it.read(src_pos);
+        };
+    }
+}
+
+template <typename T, size_t ItemsPerThread, size_t WARP_SIZE = details::BLOCK_SIZE>
+void LoadDirectWarpStriped(compute::UInt                         linear_tid,
+                           const compute::BufferVar<T>&          block_src_it,
+                           compute::UInt                         tile_offset,
+                           compute::ArrayVar<T, ItemsPerThread>& dst_items,
+                           compute::UInt                         block_item_end,
+                           compute::Var<T>                       default_value)
+{
+    for(auto i = 0; i < ItemsPerThread; i++)
+    {
+        dst_items[i] = default_value;
+    }
+    LoadDirectWarpStriped<T, ItemsPerThread, WARP_SIZE>(linear_tid, block_src_it, tile_offset, dst_items, block_item_end);
 }
 
 
@@ -102,7 +158,6 @@ class BlockLoad : public LuisaModule
               compute::UInt                                   block_item_end,
               Var<Type4Byte>                                  default_value)
     {
-        using namespace luisa::compute;
         luisa::compute::set_block_size(BlockSize);
         UInt thid = thread_id().x;
 
@@ -121,7 +176,6 @@ class BlockLoad : public LuisaModule
                              compute::UInt                                   block_item_end,
                              Var<Type4Byte>                                  default_value)
     {
-        using namespace luisa::compute;
         for(auto i = 0u; i < ITEMS_PER_THREAD; ++i)
         {
             UInt index = linear_tid + i;
