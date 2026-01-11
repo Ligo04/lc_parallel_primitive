@@ -68,7 +68,7 @@ namespace details
 
         using BlockRadixRankT = BlockRadixRankMatchEarlyCounts<BLOCK_SIZE, RADIX_BITS, IS_DESCENDING>;
 
-        static Callable ThreadBin = [](UInt u) { return thread_id().x * UInt(BINS_PER_THREAD) + u; };
+        static inline Callable ThreadBin = [](UInt u) { return thread_id().x * UInt(BINS_PER_THREAD) + u; };
 
         struct CountsCallback
         {
@@ -224,7 +224,7 @@ namespace details
                              const ArrayVar<uint, BINS_PER_THREAD>&              bins)
         {
             // check if any bins can be short-circuited
-            Bool short_circuit = true;
+            uint short_circuit = true;
 
             for(auto i = 0u; i < BINS_PER_THREAD; ++i)
             {

@@ -46,7 +46,7 @@ static inline int floor_pow_2(int n)
 }
 
 template <typename T>
-static inline T ceil_div(T a, T b) noexcept
+constexpr inline T ceil_div(T a, T b) noexcept
 {
     return (a + b - 1) / b;
 }

@@ -110,7 +110,7 @@ namespace details
                     $else
                     {
                         auto temp_storage = new SmemType<TilePrefixTempStorage<Type4Byte>>{1};
-                        TilePrefixOpT prefix_op(tile_state, temp_storage, scan_op, tile_id);
+                        TilePrefixCallbackOp prefix_op(tile_state, temp_storage, scan_op, tile_id);
                         BlockScan<Type4Byte, BLOCK_SIZE, ITEMS_PER_THREAD> block_scan;
                         if constexpr(is_inclusive)
                         {
