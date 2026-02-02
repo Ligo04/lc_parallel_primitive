@@ -286,7 +286,7 @@ class BlockRadixRankMatchEarlyCounts : public LuisaModule
         //     return IsDescending ? RADIX_DIGITS - 1 - digit : digit;
         // };
 
-        static Callable ThreadBin = [](UInt u)
+        inline static Callable ThreadBin = [](UInt u)
         {
             UInt bin = thread_id().x * BINS_PER_THREAD + u;
             return IsDescending ? RADIX_DIGITS - 1 - bin : bin;

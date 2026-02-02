@@ -4,14 +4,25 @@ local function add_test_target(file_name)
     target(file_name)
         set_kind("binary")
         add_files(file_name..".cpp")
+        set_languages("c++20")
         add_deps("lcpp")
-        add_packages("boost_ut","luisa-compute","cpptrace")
+        add_packages("boost_ut","cpptrace")
+        on_load(function(target)
+            if has_config('lc_use_xrepo') then
+                target:add('packages', "luisa-compute", {public = true})
+            else
+                target:add('deps', 'lc-runtime', 'lc-dsl')
+            end
+
+            if target:is_plat('macosx') then
+                target:add('defines', '__APPLE__')
+            end
+        end)
         -- add run path for luisa-compute
-        if is_os("mac") then
-            add_defines("__APPLE__")
-        end
         on_config(function (target)
-            target:add("runargs", path.join(target:pkg("luisa-compute"):installdir(), "bin"))
+            if has_config('lc_use_xrepo') then
+                target:add("runargs", path.join(target:pkg("luisa-compute"):installdir(), "bin"))
+            end
         end)
     target_end()
 end
