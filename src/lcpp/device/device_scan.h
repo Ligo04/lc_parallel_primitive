@@ -236,7 +236,7 @@ class DeviceScan : public LuisaModule
         auto ms_scan_tile_state_init_ptr =
             reinterpret_cast<ScanTileStateInitKernel*>(&(*ms_tile_state_init_it->second));
 
-        cmdlist << (*ms_scan_tile_state_init_ptr)(tile_states, uint(num_tiles)).dispatch(init_num_blocks);
+        cmdlist << (*ms_scan_tile_state_init_ptr)(tile_states, uint(num_tiles)).dispatch(init_num_blocks * BLOCK_SIZE);
 
         // scan
         auto key = get_type_and_op_desc<Type4Byte>(scan_op);

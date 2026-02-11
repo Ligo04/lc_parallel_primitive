@@ -105,7 +105,7 @@ class DeviceReduce : public LuisaModule
             d_out,
             num_item,
             [](const Var<Type4Byte>& a, Var<Type4Byte>& b) { return a + b; },
-            0);
+            Type4Byte(0));
     }
 
     template <NumericT Type4Byte>
