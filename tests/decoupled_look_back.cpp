@@ -1,4 +1,4 @@
-#include "lcpp/common/util_type.h"
+
 #include "lcpp/device/details/single_pass_scan_operator.h"
 #include "lcpp/runtime/core.h"
 #include "luisa/core/logging.h"
@@ -8,7 +8,6 @@
 #include "luisa/dsl/var.h"
 #include "luisa/runtime/shader.h"
 #include "luisa/runtime/stream.h"
-#include <cmath>
 #include <cstddef>
 #include <lcpp/parallel_primitive.h>
 #include <boost/ut.hpp>
@@ -24,7 +23,7 @@ int main(int argc, char* argv[])
 
     Context context{argv[1]};
 #ifdef _WIN32
-    Device device = context.create_device("dx");
+    Device device = context.create_device("cuda");
 #elif __APPLE__
     Device device = context.create_device("metal");
 #else
