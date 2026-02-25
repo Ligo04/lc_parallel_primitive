@@ -556,7 +556,6 @@ class DeviceReduce : public LuisaModule
         auto ms_reduce_by_key_it = ms_reduce_by_key_map.find(key);
         if(ms_reduce_by_key_it == ms_reduce_by_key_map.end())
         {
-            // LUISA_INFO("Compiling ReduceByKey shader for key: {}", key);
             auto shader = ReduceByKey().compile(m_device, m_shared_mem_size, reduce_op);
             ms_reduce_by_key_map.try_emplace(key, std::move(shader));
             ms_reduce_by_key_it = ms_reduce_by_key_map.find(key);

@@ -78,7 +78,7 @@ int main(int argc, char* argv[])
     };
 
 
-    "exclusive_scan"_test = [&]
+    "exclusive_scan_by_key"_test = [&]
     {
         for(auto i = 5; i < MAX_NUM_LOGIC; i++)
         {
@@ -132,6 +132,6 @@ int main(int argc, char* argv[])
                     expect(expect_segment[j - i * items_per_segment] == result[j]);
                 }
             }
-        };
+        }
     };
 }

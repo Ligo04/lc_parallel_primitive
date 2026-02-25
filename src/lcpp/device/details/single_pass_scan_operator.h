@@ -22,7 +22,7 @@
 namespace luisa::parallel_primitive
 {
 
-enum class ScanTileStatus : uchar
+enum class ScanTileStatus : uint
 {
     SCAN_TILE_OBB,           // out-of-bounds
     SCAN_TILE_INVALID = 99,  // not yet valid
