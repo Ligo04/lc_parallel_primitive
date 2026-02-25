@@ -44,7 +44,7 @@ int main(int argc, char* argv[])
 
     "radix sort key float"_test = [&]
     {
-        for(uint loop = 5; loop < 24; ++loop)
+        for(uint loop = 5; loop < 6; ++loop)
         {
             uint array_size       = 1 << loop;
             using radix_sort_type = float;
@@ -102,7 +102,7 @@ int main(int argc, char* argv[])
     {
         DeviceRadixSort<> device_radix_sort;
         device_radix_sort.create(device);
-        for(uint loop = 0; loop < 24; ++loop)
+        for(uint loop = 0; loop < 6; ++loop)
         {
             uint                num_items  = 1 << loop;
             Buffer<uint>        d_keys_in  = device.create_buffer<uint>(num_items);

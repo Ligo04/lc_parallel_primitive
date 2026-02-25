@@ -33,13 +33,14 @@ namespace details
     class ReduceByKeyModule : public LuisaModule
     {
       public:
-        using ScanTileState = ScanTileState<KeyValuePair<int, ValueType>>;
+        using FlagValuePairT = KeyValuePair<int, ValueType>;
 
+        using TileStatusViewer = ScanTileStateViewer<FlagValuePairT>;
+
+        using ScanTileStateInitKernel =
+            Shader<1, Buffer<uint>, Buffer<FlagValuePairT>, Buffer<FlagValuePairT>, uint>;
         using ReduceByKeyKernel =
-            Shader<1, Buffer<ScanTileState>, Buffer<KeyType>, Buffer<ValueType>, Buffer<KeyType>, Buffer<ValueType>, Buffer<uint>, uint>;
-
-        using ScanTileStateInitKernel = Shader<1, Buffer<ScanTileState>, int>;
-
+            Shader<1, Buffer<uint>, Buffer<FlagValuePairT>, Buffer<FlagValuePairT>, Buffer<KeyType>, Buffer<ValueType>, Buffer<KeyType>, Buffer<ValueType>, Buffer<uint>, uint>;
 
         U<ScanTileStateInitKernel> compile_scan_tile_state_init(Device& device)
         {
@@ -47,10 +48,14 @@ namespace details
 
             lazy_compile(device,
                          ms_scan_tile_state_init_shader,
-                         [](BufferVar<ScanTileState> tile_state, Int num_tiles) noexcept
+                         [](BufferVar<uint>           tile_state,
+                            BufferVar<FlagValuePairT> tile_states,
+                            BufferVar<FlagValuePairT> tile_prefixes,
+                            UInt                      num_tiles) noexcept
                          {
                              set_block_size(BLOCK_SIZE);
-                             ScanTileStateViewer::InitializeWardStatus(tile_state, num_tiles);
+                             TileStatusViewer tile_state_viewer(tile_state, tile_states, tile_prefixes);
+                             tile_state_viewer.InitializeWardStatus(num_tiles);
                          });
 
             return ms_scan_tile_state_init_shader;
@@ -61,16 +66,15 @@ namespace details
         {
             ReduceBySegmentOp scan_op{reduce_op};
 
-            using TilePrefixOpT =
-                TilePrefixCallbackOp<KeyValuePair<int, ValueType>, ReduceBySegmentOp<ReduceOp>>;
+            using TilePrefixOpT = TilePrefixCallbackOp<FlagValuePairT, ReduceBySegmentOp<ReduceOp>>;
 
-            auto scatter = [&](const ArrayVar<KeyValuePair<int, ValueType>, ITEMS_PER_THREAD> scatter_items,
-                               const ArrayVar<int, ITEMS_PER_THREAD> segment_flags,
-                               const ArrayVar<int, ITEMS_PER_THREAD> segment_indices,
-                               BufferVar<KeyType>&                   d_unique_out,
-                               BufferVar<ValueType>&                 d_aggregated_out,
-                               Int                                   num_tile_segment,
-                               Int                                   num_segments_prefix)
+            auto scatter = [&](const ArrayVar<FlagValuePairT, ITEMS_PER_THREAD> scatter_items,
+                               const ArrayVar<int, ITEMS_PER_THREAD>            segment_flags,
+                               const ArrayVar<int, ITEMS_PER_THREAD>            segment_indices,
+                               BufferVar<KeyType>&                              d_unique_out,
+                               BufferVar<ValueType>&                            d_aggregated_out,
+                               Int                                              num_tile_segment,
+                               Int                                              num_segments_prefix)
             {
                 $if(Int(ITEMS_PER_THREAD) > 1 & num_tile_segment > Int(BLOCK_SIZE))
                 {
@@ -121,13 +125,15 @@ namespace details
             lazy_compile(
                 device,
                 ms_reduce_by_key_shader,
-                [&](BufferVar<ScanTileState> tile_state,
-                    BufferVar<KeyType>       keys_in,
-                    BufferVar<ValueType>     values_in,
-                    BufferVar<KeyType>       unique_out,
-                    BufferVar<ValueType>     aggregated_out,
-                    BufferVar<uint>          num_runs_out,
-                    UInt                     num_item) noexcept
+                [&](BufferVar<uint>           tile_state,
+                    BufferVar<FlagValuePairT> tile_partial,
+                    BufferVar<FlagValuePairT> tile_inclusive,
+                    BufferVar<KeyType>        keys_in,
+                    BufferVar<ValueType>      values_in,
+                    BufferVar<KeyType>        unique_out,
+                    BufferVar<ValueType>      aggregated_out,
+                    BufferVar<uint>           num_runs_out,
+                    UInt                      num_item) noexcept
                 {
                     set_block_size(BLOCK_SIZE);
                     UInt thid       = thread_id().x;
@@ -138,9 +144,10 @@ namespace details
                     UInt num_remaining = num_item - tile_start;
                     Bool is_last_tile  = num_remaining <= tile_items;
 
+                    TileStatusViewer tile_state_viewer(tile_state, tile_partial, tile_inclusive);
+
                     SmemTypePtr<KeyType>   s_keys   = new SmemType<KeyType>{shared_mem_size};
                     SmemTypePtr<ValueType> s_values = new SmemType<ValueType>{shared_mem_size};
-                    // SmemTypePtr<int>       s_discontinutity = new SmemType<int>{shared_mem_size};
 
                     ArrayVar<KeyType, ITEMS_PER_THREAD>   local_keys;
                     ArrayVar<KeyType, ITEMS_PER_THREAD>   local_prev_keys;
@@ -187,20 +194,20 @@ namespace details
                         local_flags[0] = 0;
                     };
 
-                    ArrayVar<KeyValuePair<int, ValueType>, ITEMS_PER_THREAD> scan_items;
+                    ArrayVar<FlagValuePairT, ITEMS_PER_THREAD> scan_items;
                     for(auto item = 0u; item < ITEMS_PER_THREAD; ++item)
                     {
                         scan_items[item] = {local_flags[item], local_values[item]};
                     };
 
-                    Int                                                      num_segment_prefix = 0;
-                    Var<KeyValuePair<int, ValueType>>                        total_aggreagate{0, 0};
-                    ArrayVar<KeyValuePair<int, ValueType>, ITEMS_PER_THREAD> scan_output;
-                    Var<KeyValuePair<int, ValueType>>                        block_aggregate{0, 0};
+                    Int                                        num_segment_prefix = 0;
+                    Var<FlagValuePairT>                        total_aggreagate{0, 0};
+                    ArrayVar<FlagValuePairT, ITEMS_PER_THREAD> scan_output;
+                    Var<FlagValuePairT>                        block_aggregate{0, 0};
 
                     $if(tile_id == 0)
                     {
-                        BlockScan<KeyValuePair<int, ValueType>, BLOCK_SIZE, ITEMS_PER_THREAD>().ExclusiveScan(
+                        BlockScan<FlagValuePairT, BLOCK_SIZE, ITEMS_PER_THREAD>().ExclusiveScan(
                             scan_items, scan_output, block_aggregate, scan_op);
                         total_aggreagate   = block_aggregate;
                         num_segment_prefix = 0;
@@ -208,16 +215,15 @@ namespace details
                         $if(!is_last_tile & thread_id().x == 0)
                         {
                             // first tile
-                            ScanTileStateViewer::SetInclusive(tile_state, 0, block_aggregate);
+                            tile_state_viewer.SetInclusive(0, block_aggregate);
                         };
                     }
                     $else
                     {
-                        auto temp_storage =
-                            new SmemType<TilePrefixTempStorage<KeyValuePair<int, ValueType>>>{1};
-                        TilePrefixOpT prefix_op(tile_state, temp_storage, scan_op, tile_id);
+                        auto temp_storage = new SmemType<TilePrefixTempStorage<FlagValuePairT>>{1};
+                        TilePrefixOpT prefix_op(tile_state_viewer, temp_storage, scan_op, tile_id);
 
-                        BlockScan<KeyValuePair<int, ValueType>, BLOCK_SIZE, ITEMS_PER_THREAD>().ExclusiveScan(
+                        BlockScan<FlagValuePairT, BLOCK_SIZE, ITEMS_PER_THREAD>().ExclusiveScan(
                             scan_items, scan_output, scan_op, prefix_op);
 
                         block_aggregate    = prefix_op.GetBlockAggregate();
@@ -225,8 +231,8 @@ namespace details
                         total_aggreagate   = prefix_op.GetInclusivePrefix();
                     };
 
-                    ArrayVar<KeyValuePair<int, ValueType>, ITEMS_PER_THREAD> scatter_items;
-                    ArrayVar<int, ITEMS_PER_THREAD>                          scatter_indices;
+                    ArrayVar<FlagValuePairT, ITEMS_PER_THREAD> scatter_items;
+                    ArrayVar<int, ITEMS_PER_THREAD>            scatter_indices;
                     for(auto item = 0u; item < ITEMS_PER_THREAD; ++item)
                     {
                         scatter_items[item].key   = local_prev_keys[item];

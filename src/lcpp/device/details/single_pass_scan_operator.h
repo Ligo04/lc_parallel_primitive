@@ -22,12 +22,18 @@
 namespace luisa::parallel_primitive
 {
 
-enum class ScanTileStatus : uint
+enum class ScanTileStatus : uchar
 {
     SCAN_TILE_OBB,           // out-of-bounds
     SCAN_TILE_INVALID = 99,  // not yet valid
     SCAN_TILE_PARTIAL,       // tile aggregate is available
     SCAN_TILE_INCLUSIVE,     // inclusive tile prefix is available
+};
+
+enum class MemoryOrder
+{
+    relaxed,
+    acquire_release,
 };
 
 template <typename T>
@@ -51,7 +57,7 @@ struct ScanTileState
     T             value;
 };
 
-
+template <typename T>
 struct ScanTileStateViewer
 {
 
@@ -59,150 +65,63 @@ struct ScanTileStateViewer
 
     constexpr static size_t TILE_STATUS_PADDING = details::WARP_SIZE;
 
-    template <typename T>
-    static void InitializeWardStatus(compute::BufferVar<ScanTileState<T>>& tile_state, compute::UInt num_tile) noexcept
+    compute::BufferVar<compute::uint>& d_tile_status;
+    compute::BufferVar<T>&             d_tile_partial;
+    compute::BufferVar<T>&             d_tile_inclusive;
+
+    ScanTileStateViewer(compute::BufferVar<StatusWordT>& tile_status,
+                        compute::BufferVar<T>&           tile_partial,
+                        compute::BufferVar<T>&           tile_inclusive)
+        : d_tile_status(tile_status)
+        , d_tile_partial(tile_partial)
+        , d_tile_inclusive(tile_inclusive) {};
+
+
+    void InitializeWardStatus(compute::UInt num_tile) noexcept
     {
-
         compute::UInt tile_idx = compute::dispatch_id().x;
-
-        compute::Var<ScanTileState<T>> state;
-
         $if(tile_idx < num_tile)
         {
-            state.status = compute::def(StatusWordT(ScanTileStatus::SCAN_TILE_INVALID));
-            state.value  = T(0);
-            tile_state.write(compute::UInt(TILE_STATUS_PADDING) + tile_idx, state);
+            d_tile_status.write(compute::UInt(TILE_STATUS_PADDING) + tile_idx,
+                                compute::def(StatusWordT(ScanTileStatus::SCAN_TILE_INVALID)));
         };
         $if(compute::block_id().x == 0 & compute::thread_x() < compute::UInt(TILE_STATUS_PADDING))
         {
-            state.status = compute::def(StatusWordT(ScanTileStatus::SCAN_TILE_OBB));
-            state.value  = T(0);
-            tile_state.write(compute::thread_x(), state);
+            d_tile_status.write(compute::thread_x(), compute::def(StatusWordT(ScanTileStatus::SCAN_TILE_OBB)));
         };
     };
 
-    template <NumericT KeyType, NumericT ValueType>
-    static void InitializeWardStatus(compute::BufferVar<ScanTileState<KeyValuePair<KeyType, ValueType>>>& tile_state,
-                                     compute::UInt num_tile) noexcept
+    void SetInclusive(compute::Int tile_index, const compute::Var<T>& tile_inclusive) noexcept
     {
-
-        compute::UInt tile_idx = compute::dispatch_id().x;
-
-        compute::Var<ScanTileState<KeyValuePair<KeyType, ValueType>>> state;
-
-        $if(tile_idx < num_tile)
-        {
-            state.status = compute::def(StatusWordT(ScanTileStatus::SCAN_TILE_INVALID));
-            state.value  = {KeyType(0), ValueType(0)};
-            tile_state.write(compute::UInt(TILE_STATUS_PADDING) + tile_idx, state);
-        };
-        $if(compute::block_id().x == 0 & compute::thread_x() < compute::UInt(TILE_STATUS_PADDING))
-        {
-            state.status = compute::def(StatusWordT(ScanTileStatus::SCAN_TILE_OBB));
-            state.value  = {KeyType(0), ValueType(0)};
-            tile_state.write(compute::thread_x(), state);
-        };
+        d_tile_inclusive.volatile_write(compute::Int(TILE_STATUS_PADDING) + tile_index, tile_inclusive);
+        d_tile_status.volatile_write(compute::Int(TILE_STATUS_PADDING) + tile_index,
+                                     compute::def(StatusWordT(ScanTileStatus::SCAN_TILE_INCLUSIVE)));
     };
 
-    template <typename T>
-    static void SetInclusive(compute::BufferVar<ScanTileState<T>>& tile_state,
-                             compute::Int                          tile_index,
-                             const compute::Var<T>&                tile_prefix) noexcept
+    void SetPartial(compute::Int tile_index, const compute::Var<T>& tile_partial) noexcept
     {
-        compute::Var<ScanTileState<T>> state;
-        state.status = StatusWordT(ScanTileStatus::SCAN_TILE_INCLUSIVE);
-        state.value  = tile_prefix;
-        tile_state.volatile_write(compute::Int(TILE_STATUS_PADDING) + tile_index, state);
+        d_tile_partial.volatile_write(compute::Int(TILE_STATUS_PADDING) + tile_index, tile_partial);
+        d_tile_status.volatile_write(compute::Int(TILE_STATUS_PADDING) + tile_index,
+                                     compute::def(StatusWordT(ScanTileStatus::SCAN_TILE_PARTIAL)));
     };
 
-
-    template <NumericT KeyType, NumericT ValueType>
-    static void SetInclusive(compute::BufferVar<ScanTileState<KeyValuePair<KeyType, ValueType>>>& tile_state,
-                             compute::Int tile_index,
-                             const compute::Var<KeyValuePair<KeyType, ValueType>>& tile_prefix) noexcept
+    template <typename DelayT>
+    void WaitForValid(compute::Int tile_index, compute::Var<StatusWordT>& out_status, compute::Var<T>& out_value, DelayT delay) noexcept
     {
-        compute::Var<ScanTileState<KeyValuePair<KeyType, ValueType>>> state;
-        state.status      = StatusWordT(ScanTileStatus::SCAN_TILE_INCLUSIVE);
-        state.value.key   = tile_prefix.key;
-        state.value.value = tile_prefix.value;
-        tile_state.volatile_write(compute::Int(TILE_STATUS_PADDING) + tile_index, state);
-    };
-
-    template <typename T>
-    static void SetPartial(compute::BufferVar<ScanTileState<T>>& tile_state,
-                           compute::Int                          tile_index,
-                           const compute::Var<T>&                tile_partial) noexcept
-    {
-        compute::Var<ScanTileState<T>> state;
-        state.status = StatusWordT(ScanTileStatus::SCAN_TILE_PARTIAL);
-        state.value  = tile_partial;
-        tile_state.volatile_write(compute::Int(TILE_STATUS_PADDING) + tile_index, state);
-        // device_log("Tile {}: SetPartial status = {} value = {} ", tile_index, state.status, state.value);
-    };
-
-    template <NumericT KeyType, NumericT ValueType>
-    static void SetPartial(compute::BufferVar<ScanTileState<KeyValuePair<KeyType, ValueType>>>& tile_state,
-                           compute::Int tile_index,
-                           const compute::Var<KeyValuePair<KeyType, ValueType>>& tile_partial) noexcept
-    {
-        compute::Var<ScanTileState<KeyValuePair<KeyType, ValueType>>> state;
-        state.status      = StatusWordT(ScanTileStatus::SCAN_TILE_PARTIAL);
-        state.value.key   = tile_partial.key;
-        state.value.value = tile_partial.value;
-        tile_state.volatile_write(compute::Int(TILE_STATUS_PADDING) + tile_index, state);
-    };
-
-    template <typename T, typename DelayT>
-    static void WaitForValid(compute::BufferVar<ScanTileState<T>>& tile_state,
-                             compute::Int                          tile_index,
-                             compute::Var<StatusWordT>&            out_status,
-                             compute::Var<T>&                      out_value,
-                             DelayT                                delay) noexcept
-    {
-        compute::Var<ScanTileState<T>> curr_tile_state;
-        curr_tile_state = tile_state.volatile_read(compute::Int(TILE_STATUS_PADDING) + tile_index);
-        $while(compute::warp_active_any(curr_tile_state.status == StatusWordT(ScanTileStatus::SCAN_TILE_INVALID)))
+        out_status = d_tile_status.volatile_read(compute::Int(TILE_STATUS_PADDING) + tile_index);
+        $while(compute::warp_active_any(out_status == StatusWordT(ScanTileStatus::SCAN_TILE_INVALID)))
         {
             delay();
-            curr_tile_state = tile_state.volatile_read(compute::Int(TILE_STATUS_PADDING) + tile_index);
+            out_status = d_tile_status.volatile_read(compute::Int(TILE_STATUS_PADDING) + tile_index);
         };
-        out_status = curr_tile_state.status;
-        out_value  = curr_tile_state.value;
-
-        // $if(curr_tile_state.status == def(StatusWordT(ScanTileStatus::SCAN_TILE_PARTIAL))
-        //     & curr_tile_state.value != 1)
-        // {
-        //     device_log("Tile {}: WaitForValid status = {} value = {} ", tile_index, curr_tile_state.status, out_value);
-        // };
-    };
-
-    template <NumericT KeyType, NumericT ValueType, typename DelayT>
-    static void WaitForValid(compute::BufferVar<ScanTileState<KeyValuePair<KeyType, ValueType>>>& tile_state,
-                             compute::Int                                    tile_index,
-                             compute::Var<StatusWordT>&                      out_status,
-                             compute::Var<KeyValuePair<KeyType, ValueType>>& out_value,
-                             DelayT                                          delay) noexcept
-    {
-        compute::Var<ScanTileState<KeyValuePair<KeyType, ValueType>>> curr_tile_state;
-        curr_tile_state = tile_state.volatile_read(compute::Int(TILE_STATUS_PADDING) + tile_index);
-        $while(compute::warp_active_any(curr_tile_state.status == StatusWordT(ScanTileStatus::SCAN_TILE_INVALID)))
+        $if(out_status == StatusWordT(ScanTileStatus::SCAN_TILE_PARTIAL))
         {
-            delay();
-            curr_tile_state = tile_state.volatile_read(compute::Int(TILE_STATUS_PADDING) + tile_index);
+            out_value = d_tile_partial.volatile_read(compute::Int(TILE_STATUS_PADDING) + tile_index);
+        }
+        $else
+        {
+            out_value = d_tile_inclusive.volatile_read(compute::Int(TILE_STATUS_PADDING) + tile_index);
         };
-
-        out_status      = curr_tile_state.status;
-        out_value.key   = curr_tile_state.value.key;
-        out_value.value = curr_tile_state.value.value;
-    };
-
-    template <typename T>
-    static compute::Var<T> LoadValid(compute::BufferVar<ScanTileState<T>>& tile_state,
-                                     compute::Int                          tile_index,
-                                     auto                                  delay) noexcept
-    {
-        auto state = tile_state.volatile_read(compute::Int(TILE_STATUS_PADDING) + tile_index);
-        return state.value;
     };
 };
 
@@ -216,7 +135,7 @@ struct TilePrefixTempStorage
 
 // Decoupled look-back(warp)
 // only device
-template <typename T, typename ScanOpT, typename ScanTileStateT = ScanTileState<T>, typename DelayConstructorT = no_delay_constructor<T>>
+template <typename T, typename ScanOpT, typename ScanTileStateT = ScanTileStateViewer<T>, typename DelayConstructorT = no_delay_constructor<T>>
 class TilePrefixCallbackOp : public LuisaModule
 {
   public:
@@ -227,25 +146,24 @@ class TilePrefixCallbackOp : public LuisaModule
     using TempStorageT = TilePrefixTempStorage<T>;
 
     // TempStorageT&                        temp_storage;
-    SmemTypePtr<TempStorageT>           temp_storage;
-    compute::BufferVar<ScanTileStateT>& tile_status;
-    ScanOpT                             scan_op;
-    compute::UInt                       tile_index;
-    Var<T>                              exclusive_prefix;
-    Var<T>                              inclusive_prefix;
+    SmemTypePtr<TempStorageT> temp_storage;
+    // compute::BufferVar<ScanTileStateT>& tile_status;
+    ScanTileStateT& tile_status;
+    ScanOpT         scan_op;
+    compute::UInt   tile_index;
+    Var<T>          exclusive_prefix;
+    Var<T>          inclusive_prefix;
 
-    TilePrefixCallbackOp(compute::BufferVar<ScanTileStateT>& tile_state,
-                         SmemTypePtr<TempStorageT>&          temp_storage,
-                         ScanOpT                             scan_op,
-                         compute::UInt                       tile_index)
+    TilePrefixCallbackOp(ScanTileStateT&            tile_state,
+                         SmemTypePtr<TempStorageT>& temp_storage,
+                         ScanOpT                    scan_op,
+                         compute::UInt              tile_index)
         : tile_status{tile_state}
         , temp_storage{temp_storage}
         , scan_op{scan_op}
         , tile_index{tile_index} {};
 
-    TilePrefixCallbackOp(compute::BufferVar<ScanTileStateT>& tile_state,
-                         SmemTypePtr<TempStorageT>&          temp_storage,
-                         ScanOpT                             scan_op)
+    TilePrefixCallbackOp(ScanTileStateT& tile_state, SmemTypePtr<TempStorageT>& temp_storage, ScanOpT scan_op)
         : TilePrefixCallbackOp(tile_state, temp_storage, scan_op, compute::block_x()) {};
 
   public:
@@ -254,7 +172,8 @@ class TilePrefixCallbackOp : public LuisaModule
         $if(compute::thread_x() == 0)
         {
             (*temp_storage)[0].block_aggregate = block_aggregate;
-            ScanTileStateViewer::SetPartial(tile_status, tile_index, block_aggregate);
+            // ScanTileStateViewer::SetPartial(tile_status, tile_index, block_aggregate);
+            tile_status.SetPartial(tile_index, block_aggregate);
         };
 
         compute::Int     predecessor_idx = tile_index - compute::thread_x() - 1;
@@ -280,9 +199,11 @@ class TilePrefixCallbackOp : public LuisaModule
         $if(compute::thread_x() == 0)
         {
             inclusive_prefix = scan_op(exclusive_prefix, block_aggregate);
-            ScanTileStateViewer::SetInclusive(tile_status, tile_index, inclusive_prefix);
+            // ScanTileStateViewer::SetInclusive(tile_status, tile_index, inclusive_prefix);
+            tile_status.SetInclusive(tile_index, inclusive_prefix);
             (*temp_storage)[0].exclusive_prefix = exclusive_prefix;
             (*temp_storage)[0].inclusive_prefix = inclusive_prefix;
+            // device_log("Tile {}: exclusive = {} inclusive = {} ", tile_index, exclusive_prefix, inclusive_prefix);
         };
 
         return exclusive_prefix;
@@ -310,7 +231,8 @@ class TilePrefixCallbackOp : public LuisaModule
     void process_windows(compute::Int predecessor_idx, Var<StatusWordT>& predecessor_status, Var<T>& windows_aggregate, DeLayT delay)
     {
         Var<T> value;
-        ScanTileStateViewer::WaitForValid(tile_status, predecessor_idx, predecessor_status, value, delay);
+        // ScanTileStateViewer::WaitForValid(tile_status, predecessor_idx, predecessor_status, value, delay);
+        tile_status.WaitForValid(predecessor_idx, predecessor_status, value, delay);
 
         compute::UInt tail_flag = (predecessor_status == StatusWordT(ScanTileStatus::SCAN_TILE_INCLUSIVE));
         windows_aggregate =
