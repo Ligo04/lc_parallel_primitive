@@ -37,13 +37,13 @@ namespace details
       public:
         using FlagValuePairT = KeyValuePair<int, ValueType>;
 
-        using ScanTileState = ScanTileState<FlagValuePairT>;
-
-        using ScanByKeyKernel =
-            Shader<1, Buffer<ScanTileState>, Buffer<KeyType>, Buffer<KeyType>, Buffer<ValueType>, Buffer<ValueType>, ValueType, uint>;
+        using TileStatusViewer = ScanTileStateViewer<FlagValuePairT>;
 
         using ScanTileStateInitKernel =
-            Shader<1, Buffer<ScanTileState>, Buffer<KeyType>, Buffer<KeyType>, int>;
+            Shader<1, Buffer<uint>, Buffer<FlagValuePairT>, Buffer<FlagValuePairT>, Buffer<KeyType>, Buffer<KeyType>, int>;
+
+        using ScanByKeyKernel =
+            Shader<1, Buffer<uint>, Buffer<FlagValuePairT>, Buffer<FlagValuePairT>, Buffer<KeyType>, Buffer<KeyType>, Buffer<ValueType>, Buffer<ValueType>, ValueType, uint>;
 
 
         U<ScanTileStateInitKernel> compile_scan_tile_state_init(Device& device)
@@ -51,13 +51,17 @@ namespace details
             U<ScanTileStateInitKernel> ms_scan_tile_state_init_shader = nullptr;
             lazy_compile(device,
                          ms_scan_tile_state_init_shader,
-                         [](BufferVar<ScanTileState> tile_state,
-                            BufferVar<KeyType>       d_keys_in,
-                            BufferVar<KeyType>       d_prev_keys_output,
-                            Int                      num_tiles) noexcept
+                         [](BufferVar<uint>           tile_state,
+                            BufferVar<FlagValuePairT> tile_partial,
+                            BufferVar<FlagValuePairT> tile_inclusive,
+                            BufferVar<KeyType>        d_keys_in,
+                            BufferVar<KeyType>        d_prev_keys_output,
+                            Int                       num_tiles) noexcept
                          {
                              set_block_size(BLOCK_SIZE);
-                             ScanTileStateViewer::InitializeWardStatus(tile_state, num_tiles);
+
+                             TileStatusViewer tile_state_viewer(tile_state, tile_partial, tile_inclusive);
+                             tile_state_viewer.InitializeWardStatus(num_tiles);
                              UInt tid        = dispatch_id().x;
                              UInt tile_items = UInt(ITEMS_PER_THREAD) * block_size_x();
                              UInt tile_start = tid * tile_items;
@@ -125,13 +129,15 @@ namespace details
             lazy_compile(
                 device,
                 scan_by_key_shader,
-                [&](BufferVar<ScanTileState> tile_state,
-                    BufferVar<KeyType>       d_keys_in,
-                    BufferVar<KeyType>       d_prev_keys_in,
-                    BufferVar<ValueType>     d_values_in,
-                    BufferVar<ValueType>     d_values_out,
-                    Var<ValueType>           init_value,
-                    UInt                     num_item) noexcept
+                [&](BufferVar<uint>           tile_state,
+                    BufferVar<FlagValuePairT> tile_partial,
+                    BufferVar<FlagValuePairT> tile_inclusive,
+                    BufferVar<KeyType>        d_keys_in,
+                    BufferVar<KeyType>        d_prev_keys_in,
+                    BufferVar<ValueType>      d_values_in,
+                    BufferVar<ValueType>      d_values_out,
+                    Var<ValueType>            init_value,
+                    UInt                      num_item) noexcept
                 {
                     set_block_size(BLOCK_SIZE);
                     UInt thid       = thread_id().x;
@@ -141,6 +147,8 @@ namespace details
 
                     UInt num_remaining = num_item - tile_start;
                     Bool is_last_tile  = num_remaining <= tile_items;
+
+                    TileStatusViewer tile_state_viewer(tile_state, tile_partial, tile_inclusive);
 
                     SmemTypePtr<KeyType>   s_keys   = new SmemType<KeyType>{shared_mem_size};
                     SmemTypePtr<ValueType> s_values = new SmemType<ValueType>{shared_mem_size};
@@ -194,7 +202,7 @@ namespace details
                             $if(!is_last_tile)
                             {
                                 // first tile
-                                ScanTileStateViewer::SetInclusive(tile_state, 0, tile_aggregate);
+                                tile_state_viewer.SetInclusive(0, tile_aggregate);
                             };
                             output_scan_items[0].key = 0;
                         };
@@ -213,7 +221,7 @@ namespace details
                         ZipValueAndFlags(num_remaining, local_values, local_segment_flags, local_scan_items, is_last_tile);
 
                         auto temp_storage = new SmemType<TilePrefixTempStorage<FlagValuePairT>>{1};
-                        TilePrefixOpT prefix_op(tile_state, temp_storage, pair_scan_op, tile_id);
+                        TilePrefixOpT prefix_op(tile_state_viewer, temp_storage, pair_scan_op, tile_id);
                         if constexpr(is_inclusive)
                         {
                             BlockScan<FlagValuePairT, BLOCK_SIZE, ITEMS_PER_THREAD>().InclusiveScan(

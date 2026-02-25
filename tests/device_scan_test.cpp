@@ -37,121 +37,101 @@ int main(int argc, char* argv[])
     constexpr int32_t BLOCK_SIZE       = 256;
     constexpr int32_t ITEMS_PER_THREAD = 4;
     constexpr int32_t WARP_NUMS        = 32;
+    constexpr int32_t MAX_NUM_LOGIC    = 24;
 
     DeviceScan<BLOCK_SIZE, WARP_NUMS, ITEMS_PER_THREAD> scanner;
     scanner.create(device);
 
     "exclusive_scan"_test = [&]
     {
-        for(int i = 0; i < 20; i++)
+        for(int i = 0; i < MAX_NUM_LOGIC; i++)
         {
             const uint          array_size = 1 << i;
             luisa::vector<uint> input_data(array_size, 1);
-            auto                in_buffer  = device.create_buffer<uint>(array_size);
-            auto                out_buffer = device.create_buffer<uint>(array_size);
+            auto                in_buffer            = device.create_buffer<uint>(array_size);
+            auto                exclusive_out_buffer = device.create_buffer<uint>(array_size);
             stream << in_buffer.copy_from(input_data.data()) << synchronize();
 
-            scanner.ExclusiveSum(cmdlist, stream, in_buffer.view(), out_buffer.view(), in_buffer.size());
+            scanner.ExclusiveSum(
+                cmdlist, stream, in_buffer.view(), exclusive_out_buffer.view(), in_buffer.size());
+            luisa::vector<uint> exclusive_result(array_size);
+            stream << exclusive_out_buffer.copy_to(exclusive_result.data()) << synchronize();
 
-            luisa::vector<uint> result(array_size);
-            stream << out_buffer.copy_to(result.data()) << synchronize();
-            luisa::vector<uint> expected(array_size);
-            std::exclusive_scan(input_data.begin(), input_data.end(), expected.begin(), 0);
+            auto inclusive_out_buffer = device.create_buffer<uint>(array_size);
+            scanner.InclusiveSum(
+                cmdlist, stream, in_buffer.view(), inclusive_out_buffer.view(), in_buffer.size());
+            luisa::vector<uint> inclusive_result(array_size);
+            stream << inclusive_out_buffer.copy_to(inclusive_result.data()) << synchronize();
 
-            auto pass = std::equal(result.begin(), result.end(), expected.begin());
-            // if(!pass)
-            // {
-            //     // 打印第一个不匹配的位置
-            //     for(uint j = 0; j < array_size; j++)
-            //     {
-            //         if(result[j] != expected[j])
-            //         {
-            //             LUISA_INFO("MISMATCH at index {} (array_size=2^{}={}): result={}, expected={}",
-            //                        j,
-            //                        i,
-            //                        array_size,
-            //                        result[j],
-            //                        expected[j]);
-            //             LUISA_INFO("  tile_idx={}, offset_in_tile={}",
-            //                        j / (BLOCK_SIZE * ITEMS_PER_THREAD),
-            //                        j % (BLOCK_SIZE * ITEMS_PER_THREAD));
-            //             break;
-            //         }
-            //     }
-            // }
-            expect(pass) << "Exclusive scan failed for array size " << i;
+            luisa::vector<uint> exclusive_expected(array_size);
+            luisa::vector<uint> inclusive_expected(array_size);
+            std::exclusive_scan(input_data.begin(), input_data.end(), exclusive_expected.begin(), 0);
+            std::inclusive_scan(input_data.begin(), input_data.end(), inclusive_expected.begin());
+
+            auto exclusive_expected_match =
+                std::equal(exclusive_result.begin(), exclusive_result.end(), exclusive_expected.begin());
+            auto inclusive_expected_match =
+                std::equal(inclusive_result.begin(), inclusive_result.end(), inclusive_expected.begin());
+            expect(exclusive_expected_match && inclusive_expected_match)
+                << "Scan failed for array size " << i << "\n";
         }
     };
 
-    // "inclusive_scan"_test = [&]
-    // {
-    //     auto in_buffer  = device.create_buffer<int32>(array_size);
-    //     auto out_buffer = device.create_buffer<int32>(array_size);
-    //     stream << in_buffer.copy_from(input_data.data()) << synchronize();
 
-    //     scanner.InclusiveSum(cmdlist, stream, in_buffer.view(), out_buffer.view(), in_buffer.size());
+    "exclusive_scan_by_key"_test = [&]
+    {
+        for(auto i = 5; i < MAX_NUM_LOGIC; i++)
+        {
+            const uint           array_size = 1 << i;
+            luisa::vector<int32> input_data(array_size, 1);
+            auto                 key_buffer   = device.create_buffer<int32>(array_size);
+            auto                 value_buffer = device.create_buffer<int32>(array_size);
 
-    //     luisa::vector<int32> result(array_size);
-    //     stream << out_buffer.copy_to(result.data()) << synchronize();
-    //     luisa::vector<int32> expected(array_size);
-    //     std::inclusive_scan(input_data.begin(), input_data.end(), expected.begin());
+            constexpr int items_per_segment = 100;
+            const int     segments = (array_size + items_per_segment - 1) / items_per_segment;
 
-    //     for(auto i = 0; i < array_size; i++)
-    //     {
-    //         LUISA_INFO("inclusive {}: {} - (expected): {}", i, result[i], expected[i]);
-    //         expect(result[i] == expected[i]);
-    //     }
-    // };
+            luisa::vector<int32> input_keys(array_size);
+            for(auto i = 0; i < array_size; i++)
+            {
+                input_keys[i] = i / items_per_segment;
+            }
 
-    // "exclusive_scan"_test = [&]
-    // {
-    //     auto key_buffer   = device.create_buffer<int32>(array_size);
-    //     auto value_buffer = device.create_buffer<int32>(array_size);
+            LUISA_INFO("Array size: {}, Items per segment: {}, Total segments: {}", array_size, items_per_segment, segments);
 
-    //     constexpr int items_per_segment = 100;
-    //     const int     segments          = (array_size + items_per_segment - 1) / items_per_segment;
+            stream << key_buffer.copy_from(input_keys.data()) << synchronize();
+            stream << value_buffer.copy_from(input_data.data()) << synchronize();
 
-    //     luisa::vector<int32> input_keys(array_size);
-    //     for(auto i = 0; i < array_size; i++)
-    //     {
-    //         input_keys[i] = i / items_per_segment;
-    //     }
+            auto value_out_buffer = device.create_buffer<int32>(array_size);
+            scanner.ExclusiveSumByKey(cmdlist,
+                                      stream,
+                                      key_buffer.view(),
+                                      value_buffer.view(),
+                                      value_out_buffer.view(),
+                                      key_buffer.size());
 
-    //     LUISA_INFO("Array size: {}, Items per segment: {}, Total segments: {}", array_size, items_per_segment, segments);
+            luisa::vector<int32> result(array_size);
+            stream << value_out_buffer.copy_to(result.data()) << synchronize();
+            luisa::vector<int32> expected(array_size);
+            std::exclusive_scan(input_data.begin(), input_data.end(), expected.begin(), 0);
 
-    //     stream << key_buffer.copy_from(input_keys.data()) << synchronize();
-    //     stream << value_buffer.copy_from(input_data.data()) << synchronize();
-
-    //     auto value_out_buffer = device.create_buffer<int32>(array_size);
-    //     scanner.ExclusiveSumByKey(cmdlist,
-    //                               stream,
-    //                               key_buffer.view(),
-    //                               value_buffer.view(),
-    //                               value_out_buffer.view(),
-    //                               key_buffer.size());
-
-    //     luisa::vector<int32> result(array_size);
-    //     stream << value_out_buffer.copy_to(result.data()) << synchronize();
-    //     luisa::vector<int32> expected(array_size);
-    //     std::exclusive_scan(input_data.begin(), input_data.end(), expected.begin(), 0);
-
-    //     for(auto i = 0; i < segments; i++)
-    //     {
-    //         luisa::vector<int32> expect_segment(items_per_segment, 0);
-    //         std::exclusive_scan(input_data.begin() + i * items_per_segment,
-    //                             input_data.begin()
-    //                                 + std::min((i + 1) * items_per_segment, static_cast<int>(array_size)),
-    //                             expect_segment.begin(),
-    //                             0);
-    //         for(auto j = i * items_per_segment; j < (i + 1) * items_per_segment && j < array_size; j++)
-    //         {
-    //             LUISA_INFO("index:{} Key: {}, Expected Aggregate: {}, result:{}",
-    //                        j,
-    //                        i,
-    //                        expect_segment[j - i * items_per_segment],
-    //                        result[j]);
-    //             expect(expect_segment[j - i * items_per_segment] == result[j]);
-    //         }
-    //     }
-    // };
+            for(auto i = 0; i < segments; i++)
+            {
+                luisa::vector<int32> expect_segment(items_per_segment, 0);
+                std::exclusive_scan(input_data.begin() + i * items_per_segment,
+                                    input_data.begin()
+                                        + std::min((i + 1) * items_per_segment, static_cast<int>(array_size)),
+                                    expect_segment.begin(),
+                                    0);
+                for(auto j = i * items_per_segment; j < (i + 1) * items_per_segment && j < array_size; j++)
+                {
+                    // LUISA_INFO("index:{} Key: {}, Expected Aggregate: {}, result:{}",
+                    //            j,
+                    //            i,
+                    //            expect_segment[j - i * items_per_segment],
+                    //            result[j]);
+                    expect(expect_segment[j - i * items_per_segment] == result[j]);
+                }
+            }
+        }
+    };
 }

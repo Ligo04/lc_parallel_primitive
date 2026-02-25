@@ -6,7 +6,6 @@
  */
 
 #pragma once
-#include "luisa/dsl/stmt.h"
 #include <cstddef>
 #include <luisa/dsl/sugar.h>
 #include <luisa/dsl/func.h>
@@ -32,11 +31,12 @@ namespace details
     class ScanModule : public LuisaModule
     {
       public:
-        using TileState = ScanTileState<Type4Byte>;
+        using TileStateViewer = ScanTileStateViewer<Type4Byte>;
 
-        using ScanTileStateInitKernel = Shader<1, Buffer<TileState>, int>;
+        using ScanTileStateInitKernel = Shader<1, Buffer<uint>, Buffer<Type4Byte>, Buffer<Type4Byte>, uint>;
 
-        using ScanKernel = Shader<1, Buffer<TileState>, Buffer<Type4Byte>, Buffer<Type4Byte>, Type4Byte, uint>;
+        using ScanKernel =
+            Shader<1, Buffer<uint>, Buffer<Type4Byte>, Buffer<Type4Byte>, Buffer<Type4Byte>, Buffer<Type4Byte>, Type4Byte, uint>;
 
         template <typename ScanOP>
         using TilePrefixOpT = TilePrefixCallbackOp<Type4Byte, ScanOP>;
@@ -46,8 +46,14 @@ namespace details
             U<ScanTileStateInitKernel> scan_tile_state_init_shader = nullptr;
             lazy_compile(device,
                          scan_tile_state_init_shader,
-                         [](BufferVar<TileState> tile_state, Int num_tiles) noexcept
-                         { ScanTileStateViewer::InitializeWardStatus(tile_state, num_tiles); });
+                         [](BufferVar<uint>      tile_status,
+                            BufferVar<Type4Byte> tile_partial,
+                            BufferVar<Type4Byte> tile_inclusive,
+                            UInt                 num_tiles) noexcept
+                         {
+                             TileStateViewer tile_state_viewer(tile_status, tile_partial, tile_inclusive);
+                             tile_state_viewer.InitializeWardStatus(num_tiles);
+                         });
             return scan_tile_state_init_shader;
         }
 
@@ -58,7 +64,9 @@ namespace details
             lazy_compile(
                 device,
                 scan_shader,
-                [&](BufferVar<TileState> tile_state,
+                [&](BufferVar<uint>      tile_status,
+                    BufferVar<Type4Byte> tile_partial,
+                    BufferVar<Type4Byte> tile_inclusive,
                     BufferVar<Type4Byte> d_in,
                     BufferVar<Type4Byte> d_out,
                     Var<Type4Byte>       init_value,
@@ -72,6 +80,8 @@ namespace details
 
                     UInt num_remaining = num_elements - tile_start;
                     Bool is_last_tile  = num_remaining <= tile_items;
+
+                    TileStateViewer tile_state_viewer(tile_status, tile_partial, tile_inclusive);
 
                     ArrayVar<Type4Byte, ITEMS_PER_THREAD> items;
                     SmemTypePtr<Type4Byte> s_data = new SmemType<Type4Byte>{shared_mem_size};
@@ -104,13 +114,13 @@ namespace details
                         $if(!is_last_tile & thread_id().x == 0)
                         {
                             // first tile
-                            ScanTileStateViewer::SetInclusive(tile_state, 0, block_aggregate);
+                            tile_state_viewer.SetInclusive(0, block_aggregate);
                         };
                     }
                     $else
                     {
                         auto temp_storage = new SmemType<TilePrefixTempStorage<Type4Byte>>{1};
-                        TilePrefixCallbackOp prefix_op(tile_state, temp_storage, scan_op, tile_id);
+                        TilePrefixCallbackOp prefix_op(tile_state_viewer, temp_storage, scan_op, tile_id);
                         BlockScan<Type4Byte, BLOCK_SIZE, ITEMS_PER_THREAD> block_scan;
                         if constexpr(is_inclusive)
                         {

@@ -215,16 +215,24 @@ class DeviceReduce : public LuisaModule
         luisa::vector<luisa::uint> zero_data(1, 0);
         stream << g_num_runs_out.copy_from(zero_data.data()) << synchronize();
         int num_tiles = imax(1, (int)ceil((float)num_elements / (ITEMS_PER_THREAD * m_block_size)));
-        // tilestate
-        using ReduceByKey = details::ReduceByKeyModule<KeyType, ValueType, BLOCK_SIZE, ITEMS_PER_THREAD>;
-        using ReduceByKeyTileState = ReduceByKey::ScanTileState;
-        Buffer<ReduceByKeyTileState> tile_states =
-            m_device.create_buffer<ReduceByKeyTileState>(details::WARP_SIZE + num_tiles);
 
-        reduce_by_key_array<KeyType, ValueType, ReduceByKeyTileState>(
-            cmdlist, tile_states.view(), d_keys_in, d_values_in, d_unique_out, g_aggregates_out, g_num_runs_out, reduce_op, num_elements);
+        auto tile_states = m_device.create_buffer<uint>(details::WARP_SIZE + num_tiles);
+        auto tile_partial = m_device.create_buffer<KeyValuePair<int, ValueType>>(details::WARP_SIZE + num_tiles);
+        auto tile_inclusive =
+            m_device.create_buffer<KeyValuePair<int, ValueType>>(details::WARP_SIZE + num_tiles);
+
+        reduce_by_key_array<KeyType, ValueType>(cmdlist,
+                                                tile_states.view(),
+                                                tile_partial.view(),
+                                                tile_inclusive.view(),
+                                                d_keys_in,
+                                                d_values_in,
+                                                d_unique_out,
+                                                g_aggregates_out,
+                                                g_num_runs_out,
+                                                reduce_op,
+                                                num_elements);
         stream << cmdlist.commit() << synchronize();
-        tile_states.release();
     }
 
 
@@ -482,9 +490,11 @@ class DeviceReduce : public LuisaModule
         }
     };
 
-    template <NumericT KeyType, NumericT ValueType, typename ScanTileState, typename ReduceOp>
+    template <NumericT KeyType, NumericT ValueType, typename ReduceOp, typename FlagValuePairT = KeyValuePair<int, ValueType>>
     void reduce_by_key_array(luisa::compute::CommandList& cmdlist,
-                             BufferView<ScanTileState>    tile_states,
+                             BufferView<uint>             tile_states,
+                             BufferView<FlagValuePairT>   tile_partial,
+                             BufferView<FlagValuePairT>   tile_inclusive,
                              BufferView<KeyType>          keys_in,
                              BufferView<ValueType>        values_in,
                              BufferView<KeyType>          unique_out,
@@ -525,7 +535,6 @@ class DeviceReduce : public LuisaModule
         }
 
         using ReduceByKey = details::ReduceByKeyModule<KeyType, ValueType, BLOCK_SIZE, ITEMS_PER_THREAD>;
-        using ReduceByKeyTileState           = ReduceByKey::ScanTileState;
         using ReduceByKeyTileStateInitKernel = ReduceByKey::ScanTileStateInitKernel;
         using ReduceByKeyKernel              = ReduceByKey::ReduceByKeyKernel;
 
@@ -540,21 +549,21 @@ class DeviceReduce : public LuisaModule
         }
         auto ms_scan_tile_state_init_ptr =
             reinterpret_cast<ReduceByKeyTileStateInitKernel*>(&(*ms_scan_tile_state_init_it->second));
-        cmdlist << (*ms_scan_tile_state_init_ptr)(tile_states, num_tiles).dispatch(num_tiles * m_block_size);
+        cmdlist << (*ms_scan_tile_state_init_ptr)(tile_states, tile_partial, tile_inclusive, num_tiles)
+                       .dispatch(num_tiles * m_block_size);
         // reduce by key
-
         auto key                 = get_type_and_op_desc<KeyType, ValueType>(reduce_op);
         auto ms_reduce_by_key_it = ms_reduce_by_key_map.find(key);
         if(ms_reduce_by_key_it == ms_reduce_by_key_map.end())
         {
-            LUISA_INFO("Compiling ReduceByKey shader for key: {}", key);
             auto shader = ReduceByKey().compile(m_device, m_shared_mem_size, reduce_op);
             ms_reduce_by_key_map.try_emplace(key, std::move(shader));
             ms_reduce_by_key_it = ms_reduce_by_key_map.find(key);
         }
         auto ms_reduce_by_key_ptr = reinterpret_cast<ReduceByKeyKernel*>(&(*ms_reduce_by_key_it->second));
 
-        cmdlist << (*ms_reduce_by_key_ptr)(tile_states, keys_in, values_in, unique_out, aggregated_out, num_runs_out, num_elements)
+        cmdlist << (*ms_reduce_by_key_ptr)(
+                       tile_states, tile_partial, tile_inclusive, keys_in, values_in, unique_out, aggregated_out, num_runs_out, num_elements)
                        .dispatch(m_block_size * num_tiles);
     };
 

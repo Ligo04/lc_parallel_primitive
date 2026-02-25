@@ -44,7 +44,7 @@ int main(int argc, char* argv[])
 
     "radix sort key float"_test = [&]
     {
-        for(uint loop = 5; loop < 24; ++loop)
+        for(uint loop = 5; loop < 25; ++loop)
         {
             uint array_size       = 1 << loop;
             using radix_sort_type = float;
