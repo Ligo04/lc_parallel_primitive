@@ -55,6 +55,7 @@ namespace details
                              Var<Type4Byte>       initial_value) noexcept
                          {
                              set_block_size(BLOCK_SIZE);
+                             set_warp_size(WARP_SIZE);
 
                              UInt segment_begin = d_begin_offsets.read(block_id().x);
                              UInt segment_end   = d_end_offsets.read(block_id().x);
@@ -91,7 +92,7 @@ namespace details
 
         template <typename ReduceOp, typename TransformOp = IdentityOp>
         using AgentSmallReduceT =
-            AgentWarpReduce<Type4Byte, ReduceOp, TransformOp, small_threads_per_warp, ITEMS_PER_THREAD>;
+            AgentWarpReduce<Type4Byte, ReduceOp, TransformOp, ITEMS_PER_THREAD, small_threads_per_warp>;
 
 
         template <typename ReduceOp>

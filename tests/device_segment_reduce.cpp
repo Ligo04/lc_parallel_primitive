@@ -34,11 +34,7 @@ int main(int argc, char* argv[])
     Stream      stream = device.create_stream();
     CommandList cmdlist;
 
-    constexpr int32_t BLOCK_SIZE       = 256;
-    constexpr int32_t ITEMS_PER_THREAD = 2;
-    constexpr int32_t WARP_NUMS        = 32;
-
-    DeviceSegmentReduce<BLOCK_SIZE, WARP_NUMS, ITEMS_PER_THREAD> reducer;
+    DeviceSegmentReduce<> reducer;
     reducer.create(device);
 
     "segment_reduce"_test = [&]
