@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include "lcpp/common/utils.h"
 #include "luisa/core/basic_traits.h"
 #include "luisa/dsl/struct.h"
 #include "luisa/dsl/sugar.h"
@@ -17,23 +18,45 @@ namespace luisa::parallel_primitive
 struct GridEvenShared
 {
   public:
-    int           total_tiles;
-    int           big_shares;
+    compute::uint total_tiles;
+    compute::uint big_shares;
     compute::uint big_shared_items;
     compute::uint normal_share_items;
     compute::uint normal_base_offset;
 
     compute::uint num_items;
-    int           grid_size;
+    compute::uint grid_size;
     compute::uint block_offset;
     compute::uint block_end;
     compute::uint block_stride;
+
+    void DispatchInit(compute::uint num_items, compute::uint max_grid_size, compute::uint tile_items)
+    {
+        if(num_items <= 0 || max_grid_size <= 0 || tile_items <= 0)
+        {
+            // invalid dispatch, set grid size to 1 and let first block handle it
+            this->num_items    = 0;
+            this->grid_size    = 0;
+            this->block_offset = 0;
+            this->block_end    = 0;
+            return;
+        }
+
+        this->block_offset = num_items;
+        this->block_end    = num_items;
+        this->num_items    = num_items;
+
+        this->total_tiles = std::min(std::numeric_limits<uint>::max(), ceil_div(num_items, tile_items));
+        this->grid_size = std::min(total_tiles, max_grid_size);
+
+        compute::uint avg_items_per_tile = grid_size > 0 ? total_tiles / grid_size : 0;
+        this->big_shares                 = total_tiles - (avg_items_per_tile * grid_size);
+        this->normal_share_items         = avg_items_per_tile * tile_items;
+        this->normal_base_offset         = big_shares * tile_items;
+        this->big_shared_items           = this->normal_share_items + tile_items;
+    };
 };
 }  // namespace luisa::parallel_primitive
-
-// #define LUISA_GRADEVENSHARED_TEMPLATE() template <NumericT Type4Byte>
-// #define LUISA_GRADEVENSHARED_NAME() luisa::parallel_primitive::GridEvenShared
-
 LUISA_STRUCT(luisa::parallel_primitive::GridEvenShared,
              total_tiles,
              big_shares,

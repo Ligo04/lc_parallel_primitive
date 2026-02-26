@@ -55,6 +55,7 @@ namespace details
                              Var<Type4Byte>       initial_value) noexcept
                          {
                              set_block_size(BLOCK_SIZE);
+                             set_warp_size(WARP_SIZE);
 
                              UInt segment_begin = d_begin_offsets.read(block_id().x);
                              UInt segment_end   = d_end_offsets.read(block_id().x);
@@ -71,14 +72,9 @@ namespace details
 
                              SmemTypePtr<Type4Byte> smem_data = new SmemType<Type4Byte>{shared_mem_size};
                              Var<Type4Byte> block_aggregate =
-                                 AgentReduceT<ReduceOp>(smem_data, d_arr_in, reduce_op , luisa::parallel_primitive::IdentityOp()).ConsumeRange(segment_begin, segment_end);
-
-                             // normalize as needed(for keyvalue-pair)
-                             //  if constexpr(is_key_value_pair_t<Type4Byte>)
-                             //  {
-                             //      block_aggregate = extract_value(block_aggregate);
-                             //  };
-
+                                 AgentReduceT<ReduceOp>(
+                                     smem_data, d_arr_in, reduce_op, luisa::parallel_primitive::IdentityOp())
+                                     .ConsumeRange(segment_begin, segment_end);
                              $if(thread_id().x == 0)
                              {
                                  // finalize and store aggregate
@@ -96,7 +92,7 @@ namespace details
 
         template <typename ReduceOp, typename TransformOp = IdentityOp>
         using AgentSmallReduceT =
-            AgentWarpReduce<Type4Byte, ReduceOp, TransformOp, small_threads_per_warp, ITEMS_PER_THREAD>;
+            AgentWarpReduce<Type4Byte, ReduceOp, TransformOp, ITEMS_PER_THREAD, small_threads_per_warp>;
 
 
         template <typename ReduceOp>
@@ -137,7 +133,8 @@ namespace details
 
                             SmemTypePtr<Type4Byte> smem_data = new SmemType<Type4Byte>{segments_per_small_block};
                             Var<Type4Byte> warp_aggregate =
-                                AgentSmallReduceT<ReduceOp>(smem_data, d_arr_in, reduce_op,luisa::parallel_primitive::IdentityOp())
+                                AgentSmallReduceT<ReduceOp>(
+                                    smem_data, d_arr_in, reduce_op, luisa::parallel_primitive::IdentityOp())
                                     .ConsumeRange(segment_begin, segment_begin + d_segment_size);
                             $if(lane_id == 0)
                             {
@@ -152,7 +149,8 @@ namespace details
 
                         SmemTypePtr<Type4Byte> smem_data = new SmemType<Type4Byte>{shared_mem_size};
                         Var<Type4Byte>         block_aggregate =
-                            AgentReduceT<ReduceOp>(smem_data, d_arr_in, reduce_op,luisa::parallel_primitive::IdentityOp()).ConsumeRange(segment_begin, segment_begin + d_segment_size);
+                            AgentReduceT<ReduceOp>(smem_data, d_arr_in, reduce_op, luisa::parallel_primitive::IdentityOp())
+                                .ConsumeRange(segment_begin, segment_begin + d_segment_size);
 
                         $if(thid == 0)
                         {

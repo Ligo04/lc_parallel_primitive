@@ -33,9 +33,10 @@ int main(int argc, char* argv[])
     Stream      stream = device.create_stream();
 
 
-    constexpr size_t array_size       = 1024;
+    constexpr size_t array_size       = 2000;
     constexpr size_t BLOCKSIZE        = 256;
-    constexpr size_t ITEMS_PER_THREAD = 2;
+    constexpr size_t ITEMS_PER_THREAD = 4;
+    constexpr size_t ITEM_BLOCK_SIZE  = BLOCKSIZE * ITEMS_PER_THREAD;
 
     auto                 in_buffer  = device.create_buffer<int32>(array_size);
     auto                 out_buffer = device.create_buffer<int32>(array_size / BLOCKSIZE);
@@ -100,7 +101,7 @@ int main(int argc, char* argv[])
                          ArrayVar<int, ITEMS_PER_THREAD> thread_data;
                          BlockLoad<int, BLOCKSIZE, ITEMS_PER_THREAD>().Load(arr_in, thread_data, tile_start);
                          ArrayVar<int, ITEMS_PER_THREAD> scanned_data;
-                         Int                             block_aggregate;
+                         Var<int>                        block_aggregate;
                          BlockScan<int>().ExclusiveSum(thread_data, scanned_data, block_aggregate);
                          BlockStore<int, BLOCKSIZE, ITEMS_PER_THREAD>().Store(scanned_data, arr_out, tile_start);
                      });
@@ -177,20 +178,18 @@ int main(int argc, char* argv[])
     //              [&](BufferVar<int> arr_in, BufferVar<int> arr_out, Int n) noexcept
     //              {
     //                  luisa::compute::set_block_size(ITEM_BLOCK_SIZE);
-    //                  UInt tid = UInt(thread_id().x);
-    //                  UInt block_start =
-    //                      block_id().x * block_size_x() * UInt(ITEMS_PER_THREAD);
+    //                  UInt tid         = UInt(thread_id().x);
+    //                  UInt block_start = block_id().x * block_size_x() * UInt(ITEMS_PER_THREAD);
 
     //                  ArrayVar<int, ITEMS_PER_THREAD> thread_data;
     //                  $for(i, 0u, UInt(ITEMS_PER_THREAD))
     //                  {
-    //                      UInt index = block_start + tid * UInt(ITEMS_PER_THREAD) + i;
+    //                      UInt index     = block_start + tid * UInt(ITEMS_PER_THREAD) + i;
     //                      thread_data[i] = select(0, arr_in.read(index), index < n);
     //                  };
 
     //                  ArrayVar<int, ITEMS_PER_THREAD> scanned_data;
-    //                  BlockScan<int, ITEM_BLOCK_SIZE, ITEMS_PER_THREAD>().ExclusiveSum(
-    //                      thread_data, scanned_data);
+    //                  BlockScan<int, ITEM_BLOCK_SIZE, ITEMS_PER_THREAD>().ExclusiveSum(thread_data, scanned_data);
 
     //                  $for(i, 0u, UInt(ITEMS_PER_THREAD))
     //                  {
@@ -200,8 +199,7 @@ int main(int argc, char* argv[])
     //              });
 
 
-    // stream << (*block_scan_item_shader)(in_buffer.view(), scan_out_buffer.view(), array_size)
-    //               .dispatch(array_size / ITEMS_PER_THREAD);
+    // stream << (*block_scan_item_shader)(in_buffer.view(), scan_out_buffer.view(), array_size).dispatch(array_size / ITEMS_PER_THREAD);
     // stream << scan_out_buffer.copy_to(scan_result.data()) << synchronize();  // 输出结果
 
     // "test_exlusive_scan_4"_test = [&]
@@ -226,5 +224,5 @@ int main(int argc, char* argv[])
     //     }
     // };
 
-    // std::cout << std::endl;
+    std::cout << std::endl;
 }

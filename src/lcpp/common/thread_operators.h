@@ -16,7 +16,6 @@ namespace luisa::parallel_primitive
 {
 using namespace luisa::compute;
 
-
 struct ArgMaxOp
 {
     template <NumericT Type4Byte>
@@ -47,10 +46,37 @@ struct ArgMinOp
     }
 };
 
+struct SumOp
+{
+    template <NumericT Type4Byte>
+    Var<Type4Byte> operator()(const Var<Type4Byte>& a, const Var<Type4Byte>& b) const noexcept
+    {
+        return a + b;
+    }
+};
+
+struct MaxOp
+{
+    template <NumericT Type4Byte>
+    Var<Type4Byte> operator()(const Var<Type4Byte>& a, const Var<Type4Byte>& b) const noexcept
+    {
+        return luisa::compute::max(a, b);
+    }
+};
+
+struct MinOp
+{
+    template <NumericT Type4Byte>
+    Var<Type4Byte> operator()(const Var<Type4Byte>& a, const Var<Type4Byte>& b) const noexcept
+    {
+        return luisa::compute::min(a, b);
+    }
+};
+
 struct IdentityOp
 {
-    template <typename TypeData>
-    Var<TypeData> operator()(const Var<TypeData>& data) const noexcept
+    template <typename T>
+    Var<T> operator()(const Var<T>& data) const noexcept
     {
         return data;
     }

@@ -6,12 +6,6 @@
  */
 #pragma once
 
-#include "details/segment_reduce.h"
-#include "lcpp/common/utils.h"
-#include "lcpp/device/details/reduce.h"
-#include "luisa/core/basic_traits.h"
-#include "luisa/core/logging.h"
-#include "luisa/runtime/buffer.h"
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
@@ -23,7 +17,8 @@
 #include <lcpp/common/util_type.h>
 #include <lcpp/common/thread_operators.h>
 #include <lcpp/runtime/core.h>
-
+#include <lcpp/device/details/segment_reduce.h>
+#include <lcpp/common/utils.h>
 
 namespace luisa::parallel_primitive
 {
@@ -92,30 +87,13 @@ class DeviceSegmentReduce : public LuisaModule
              BufferView<uint>      d_begin_offsets,
              BufferView<uint>      d_end_offsets)
     {
-        Reduce(
-            cmdlist,
-            stream,
-            d_in,
-            d_out,
-            num_segments,
-            d_begin_offsets,
-            d_end_offsets,
-            [](const Var<Type4Byte>& a, const Var<Type4Byte>& b) { return a + b; },
-            0);
+        Reduce(cmdlist, stream, d_in, d_out, num_segments, d_begin_offsets, d_end_offsets, SumOp(), Type4Byte(0));
     }
 
     template <NumericT Type4Byte>
     void Sum(CommandList& cmdlist, Stream& stream, BufferView<Type4Byte> d_in, BufferView<Type4Byte> d_out, uint num_segments, uint segment_size)
     {
-        Reduce(
-            cmdlist,
-            stream,
-            d_in,
-            d_out,
-            num_segments,
-            segment_size,
-            [](const Var<Type4Byte>& a, const Var<Type4Byte>& b) { return a + b; },
-            0);
+        Reduce(cmdlist, stream, d_in, d_out, num_segments, segment_size, SumOp(), Type4Byte(0));
     }
 
 

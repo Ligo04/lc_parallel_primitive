@@ -21,7 +21,11 @@ enum class BlockScanAlgorithm
     SHARED_MEMORY,
     WARP_SHUFFLE
 };
-template <typename Type4Byte, size_t BLOCK_SIZE = details::BLOCK_SIZE, size_t ITEMS_PER_THREAD = 2, size_t WARP_SIZE = details::WARP_SIZE, BlockScanAlgorithm DEFALUTE_ALGORITHNM = BlockScanAlgorithm::WARP_SHUFFLE>
+template <typename Type4Byte,
+          size_t             BLOCK_SIZE          = details::BLOCK_SIZE,
+          size_t             ITEMS_PER_THREAD    = details::ITEMS_PER_THREAD,
+          size_t             WARP_SIZE           = details::WARP_SIZE,
+          BlockScanAlgorithm DEFALUTE_ALGORITHNM = BlockScanAlgorithm::WARP_SHUFFLE>
 class BlockScan : public LuisaModule
 {
   public:
