@@ -49,7 +49,7 @@ struct GridEvenShared
         this->total_tiles = std::min(std::numeric_limits<uint>::max(), ceil_div(num_items, tile_items));
         this->grid_size = std::min(total_tiles, max_grid_size);
 
-        compute::uint avg_items_per_tile = total_tiles / grid_size;
+        compute::uint avg_items_per_tile = grid_size > 0 ? total_tiles / grid_size : 0;
         this->big_shares                 = total_tiles - (avg_items_per_tile * grid_size);
         this->normal_share_items         = avg_items_per_tile * tile_items;
         this->normal_base_offset         = big_shares * tile_items;

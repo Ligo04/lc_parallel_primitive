@@ -274,9 +274,9 @@ class DeviceReduce : public LuisaModule
                                 BufferView<Type>             temp_storage,
                                 BufferView<Type>             arr_in,
                                 BufferView<Type>             arr_out,
-                                int                          num_items,
-                                int                          offset,
-                                int                          level,
+                                uint                         num_items,
+                                uint                         offset,
+                                uint                         level,
                                 ReduceOp                     reduce_op,
                                 Type                         init,
                                 TransformOp                  transform_op = IdentityOp()) noexcept
@@ -352,7 +352,7 @@ class DeviceReduce : public LuisaModule
                              BufferView<ValueType>        aggregated_out,
                              BufferView<uint>             num_runs_out,
                              ReduceOp                     reduce_op,
-                             int                          num_items) noexcept
+                             uint                         num_items) noexcept
     {
         uint tile_items = m_block_size * ITEMS_PER_THREAD;
         uint num_tiles  = imax(1, (uint)ceil((float)num_items / tile_items));
