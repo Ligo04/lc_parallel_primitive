@@ -19,27 +19,23 @@ using namespace luisa;
 using namespace luisa::compute;
 using namespace luisa::parallel_primitive;
 using namespace boost::ut;
+
 int main(int argc, char* argv[])
 {
     log_level_verbose();
 
     Context context{argv[1]};
 #ifdef _WIN32
-    Device device = context.create_device("cuda");
+    Device device = context.create_device("dx");
 #elif __APPLE__
     Device device = context.create_device("metal");
 #else
     Device device = context.create_device("cuda");
 #endif
-    Stream      stream = device.create_stream();
-    CommandList cmdlist;
+    Stream stream = device.create_stream();
 
-    constexpr int32_t array_size       = 10240;
-    constexpr int32_t BLOCK_SIZE       = 256;
-    constexpr int32_t ITEMS_PER_THREAD = 2;
-    constexpr int32_t WARP_NUMS        = 32;
-
-    DeviceReduce<BLOCK_SIZE, WARP_NUMS, ITEMS_PER_THREAD> reducer;
+    constexpr int32_t array_size = 1 << 12;
+    DeviceReduce<>    reducer;
     reducer.create(device);
 
     luisa::vector<int32> input_data(array_size);
@@ -50,19 +46,29 @@ int main(int argc, char* argv[])
     std::mt19937 rng(114521);  // 固定种子
     std::shuffle(input_data.begin(), input_data.end(), rng);
 
-    "reduce"_test = [&]
+
+    using Type4Byte = uint;
+    "reduce"_test   = [&]
     {
-        luisa::vector<int32> result(1);
-        auto                 in_buffer  = device.create_buffer<int32>(array_size);
-        auto                 out_buffer = device.create_buffer<int32>(1);
-        stream << in_buffer.copy_from(input_data.data()) << synchronize();
+        for(uint loop = 0; loop < 24; ++loop)
+        {
+            uint num_items = 1 << loop;
+            num_items += 1;
+            Buffer<Type4Byte>      d_input  = device.create_buffer<Type4Byte>(num_items);
+            Buffer<Type4Byte>      d_output = device.create_buffer<Type4Byte>(1);
+            std::vector<Type4Byte> host_input(num_items, 1);
+            stream << d_input.copy_from(host_input.data()) << synchronize();
+            CommandList cmdlist;
+            reducer.Sum(cmdlist, stream, d_input.view(), d_output.view(), num_items);
+            stream << cmdlist.commit() << synchronize();
+            std::vector<Type4Byte> host_output(1);
+            stream << d_output.copy_to(host_output.data()) << synchronize();
 
-        reducer.Sum(cmdlist, stream, in_buffer.view(), out_buffer.view(), in_buffer.size());
-
-        stream << out_buffer.copy_to(result.data()) << synchronize();  // 输出结果
-        LUISA_INFO("Result (0+1+2+...+{}): {}", (array_size - 1), ((array_size - 1) * array_size) / 2);
-        LUISA_INFO("Reduce: {}", result[0]);
-        expect((((array_size - 1) * array_size) / 2) == result[0]);
+            LUISA_INFO("Reduce: {}", host_output[0]);
+            expect(host_output[0] == num_items);
+            d_input.release();
+            d_output.release();
+        }
     };
 
     "reduce_transform"_test = [&]
@@ -74,13 +80,15 @@ int main(int argc, char* argv[])
 
         auto max_reduce_op = [](const Var<int>& a, const Var<int>& b) noexcept
         { return compute::max(a, b); };
+
         auto square_op = [](const Var<int>& x) noexcept { return x * x; };
 
+        CommandList cmdlist;
         reducer.TransformReduce(
             cmdlist, stream, in_buffer.view(), out_buffer.view(), in_buffer.size(), max_reduce_op, square_op, 0);
-
         stream << out_buffer.copy_to(result.data()) << synchronize();  // 输出结果
-        LUISA_INFO("Max Result(square) (0,1,4,...+{}): {}", (array_size - 1), (array_size - 1) * (array_size - 1));
+
+        LUISA_INFO("Reduce(square) (0,1,4,...+{}): {}", (array_size - 1), (array_size - 1) * (array_size - 1));
         LUISA_INFO("Result(square): {}", result[0]);
         expect((array_size - 1) * (array_size - 1) == result[0]);
     };
@@ -91,6 +99,7 @@ int main(int argc, char* argv[])
         auto                 in_buffer  = device.create_buffer<int32>(array_size);
         auto                 out_buffer = device.create_buffer<int32>(1);
         luisa::vector<int32> result(1);
+        CommandList          cmdlist;
         reducer.Min(cmdlist, stream, in_buffer.view(), out_buffer.view(), in_buffer.size());
         stream << out_buffer.copy_to(result.data()) << synchronize();  // 输出结果
         LUISA_INFO("Result Min(0-{}): {}",
@@ -108,6 +117,7 @@ int main(int argc, char* argv[])
         luisa::vector<int32> result(1);
 
         stream << in_buffer.copy_from(input_data.data()) << synchronize();
+        CommandList cmdlist;
         reducer.Max(cmdlist, stream, in_buffer.view(), out_buffer.view(), in_buffer.size());
         stream << out_buffer.copy_to(result.data()) << synchronize();  // 输出结果
         LUISA_INFO("Result Max(0-1023): {}", *std::max_element(input_data.begin(), input_data.end()));
@@ -125,12 +135,13 @@ int main(int argc, char* argv[])
         auto                       index_out_buffer = device.create_buffer<luisa::uint>(1);
         luisa::vector<int32>       result(1);
         luisa::vector<luisa::uint> index_result(1);
+        CommandList                cmdlist;
         reducer.ArgMin(
             cmdlist, stream, in_buffer.view(), out_buffer.view(), index_out_buffer.view(), in_buffer.size());
 
         stream << out_buffer.copy_to(result.data()) << synchronize();              // 输出结果
         stream << index_out_buffer.copy_to(index_result.data()) << synchronize();  // 输出结果
-
+        LUISA_INFO("result index:{}, value: {}", index_result[0], result[0]);
 
         LUISA_INFO("Index ArgMin: {}",
                    std::min_element(input_data.begin(), input_data.end()) - input_data.begin());
@@ -148,6 +159,8 @@ int main(int argc, char* argv[])
         auto                       index_out_buffer = device.create_buffer<luisa::uint>(1);
         luisa::vector<int32>       result(1);
         luisa::vector<luisa::uint> index_result(1);
+
+        CommandList cmdlist;
         reducer.ArgMax(
             cmdlist, stream, in_buffer.view(), out_buffer.view(), index_out_buffer.view(), in_buffer.size());
 
@@ -186,7 +199,7 @@ int main(int argc, char* argv[])
 
         stream << key_buffer.copy_from(input_keys.data()) << synchronize();
         stream << value_buffer.copy_from(input_data.data()) << synchronize();
-
+        CommandList cmdlist;
         reducer.ReduceByKey(
             cmdlist,
             stream,

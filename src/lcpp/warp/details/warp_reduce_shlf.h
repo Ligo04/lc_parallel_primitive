@@ -21,10 +21,11 @@ namespace details
     template <typename Type4Byte, size_t LOGIC_WARP_SIZE = details::WARP_SIZE>
     struct WarpReduceShfl
     {
-        compute::UInt lane_id;
-        compute::UInt warp_id;
+        constexpr static bool IS_ARCH_WARP = (LOGIC_WARP_SIZE == details::WARP_SIZE);
+        compute::UInt         lane_id;
+        compute::UInt         warp_id;
+        compute::UInt         member_mask;
 
-        compute::UInt member_mask;
         WarpReduceShfl()
             : lane_id(warp_lane_id())
             , warp_id(IS_ARCH_WARP ? 0 : warp_lane_id() / compute::UInt(LOGIC_WARP_SIZE))
@@ -36,31 +37,16 @@ namespace details
             }
         }
 
-        constexpr static bool IS_ARCH_WARP = (LOGIC_WARP_SIZE == details::WARP_SIZE);
-
         template <typename ReduceOp>
         Var<Type4Byte> Reduce(const Var<Type4Byte>& input, ReduceOp op, UInt valid_item = LOGIC_WARP_SIZE)
         {
-            Var<Type4Byte> result = input;
-
-            compute::UInt offset = 1u;
-            $while(offset < compute::warp_lane_count())
-            {
-                Var<Type4Byte> temp = ShuffleDown(result, lane_id, offset, valid_item);
-                $if(lane_id + offset <= valid_item)
-                {
-                    result = op(result, temp);
-                };
-                offset <<= 1;
-            };
-            return result;
+            return ReduceStep(input, op, valid_item - 1);
         }
-
 
         template <bool HEAD_SEGMENT, typename FlagT, typename ReduceOp>
         Var<Type4Byte> SegmentReduce(const Var<Type4Byte>& input,
                                      const Var<FlagT>&     flag,
-                                     ReduceOp              redecu_op,
+                                     ReduceOp              reduce_op,
                                      UInt                  valid_item = LOGIC_WARP_SIZE)
         {
             UInt warp_flags = compute::warp_active_bit_mask(flag == 1u).x;
@@ -80,7 +66,26 @@ namespace details
 
             UInt last_lane = compute::ctz(warp_flags);
 
-            return Reduce(input, redecu_op, last_lane);
+            return ReduceStep(input, reduce_op, last_lane);
+        }
+
+      private:
+        template <typename ReduceOp>
+        Var<Type4Byte> ReduceStep(const Var<Type4Byte>& input, ReduceOp op, UInt valid_item = LOGIC_WARP_SIZE)
+        {
+            Var<Type4Byte> result = input;
+
+            compute::UInt offset = 1u;
+            $while(offset < compute::warp_lane_count())
+            {
+                Var<Type4Byte> temp = ShuffleDown(result, lane_id, offset, valid_item);
+                $if(lane_id + offset <= valid_item)
+                {
+                    result = op(result, temp);
+                };
+                offset <<= 1;
+            };
+            return result;
         }
     };
 }  // namespace details

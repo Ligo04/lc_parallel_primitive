@@ -71,14 +71,9 @@ namespace details
 
                              SmemTypePtr<Type4Byte> smem_data = new SmemType<Type4Byte>{shared_mem_size};
                              Var<Type4Byte> block_aggregate =
-                                 AgentReduceT<ReduceOp>(smem_data, d_arr_in, reduce_op , luisa::parallel_primitive::IdentityOp()).ConsumeRange(segment_begin, segment_end);
-
-                             // normalize as needed(for keyvalue-pair)
-                             //  if constexpr(is_key_value_pair_t<Type4Byte>)
-                             //  {
-                             //      block_aggregate = extract_value(block_aggregate);
-                             //  };
-
+                                 AgentReduceT<ReduceOp>(
+                                     smem_data, d_arr_in, reduce_op, luisa::parallel_primitive::IdentityOp())
+                                     .ConsumeRange(segment_begin, segment_end);
                              $if(thread_id().x == 0)
                              {
                                  // finalize and store aggregate
@@ -137,7 +132,8 @@ namespace details
 
                             SmemTypePtr<Type4Byte> smem_data = new SmemType<Type4Byte>{segments_per_small_block};
                             Var<Type4Byte> warp_aggregate =
-                                AgentSmallReduceT<ReduceOp>(smem_data, d_arr_in, reduce_op,luisa::parallel_primitive::IdentityOp())
+                                AgentSmallReduceT<ReduceOp>(
+                                    smem_data, d_arr_in, reduce_op, luisa::parallel_primitive::IdentityOp())
                                     .ConsumeRange(segment_begin, segment_begin + d_segment_size);
                             $if(lane_id == 0)
                             {
@@ -152,7 +148,8 @@ namespace details
 
                         SmemTypePtr<Type4Byte> smem_data = new SmemType<Type4Byte>{shared_mem_size};
                         Var<Type4Byte>         block_aggregate =
-                            AgentReduceT<ReduceOp>(smem_data, d_arr_in, reduce_op,luisa::parallel_primitive::IdentityOp()).ConsumeRange(segment_begin, segment_begin + d_segment_size);
+                            AgentReduceT<ReduceOp>(smem_data, d_arr_in, reduce_op, luisa::parallel_primitive::IdentityOp())
+                                .ConsumeRange(segment_begin, segment_begin + d_segment_size);
 
                         $if(thid == 0)
                         {

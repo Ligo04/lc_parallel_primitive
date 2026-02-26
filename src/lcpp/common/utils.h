@@ -84,6 +84,17 @@ luisa::string get_type_and_op_desc(ReduceOp op)
     return luisa::string(key_desc) + "+" + luisa::string(reduce_op_desc);
 }
 
+template <KeyValuePairType KeyValueType, typename ReduceOp, typename TransformOp>
+luisa::string get_type_and_op_desc(ReduceOp op, TransformOp transform_op)
+{
+    using ValueType                      = value_type_of_t<KeyValueType>;
+    luisa::string_view key_desc          = luisa::compute::Type::of<ValueType>()->description();
+    luisa::string_view reduce_op_desc    = std::type_index(typeid(op)).name();
+    luisa::string_view transform_op_desc = std::type_index(typeid(transform_op)).name();
+
+    return luisa::string(key_desc) + "+" + luisa::string(reduce_op_desc) + "+" + luisa::string(transform_op_desc);
+}
+
 template <typename KeyType, typename ValueType>
 luisa::string get_type_and_op_desc()
 {
@@ -113,6 +124,16 @@ luisa::string get_type_and_op_desc(ReduceOp op, TransformOp transform_op)
     return luisa::string(key_desc) + "+" + luisa::string(reduce_op_desc) + "+" + luisa::string(transform_op_desc);
 }
 
+
+template <typename KeyType, typename ValueType, typename ReduceOp, typename TransformOp>
+luisa::string get_type_and_op_desc(ReduceOp op, TransformOp transform_op)
+{
+    luisa::string_view key_desc   = luisa::compute::Type::of<KeyType>()->description();
+    luisa::string_view value_desc = luisa::compute::Type::of<ValueType>()->description();
+
+    return luisa::string(key_desc) + "+" + luisa::string(value_desc) + "+"
+           + std::type_index(typeid(op)).name() + "+" + std::type_index(typeid(transform_op)).name();
+}
 
 static void get_temp_size_scan(size_t& temp_storage_size, size_t m_block_size, size_t items_per_thread, size_t num_items)
 {

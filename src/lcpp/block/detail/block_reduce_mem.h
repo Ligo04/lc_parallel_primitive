@@ -40,8 +40,7 @@ namespace details
             {
                 $if(thid < stride)
                 {
-                    (*m_shared_mem)[thid] =
-                        reduce_op((*m_shared_mem)[thid], (*m_shared_mem)[thid + stride]);
+                    (*m_shared_mem)[thid] = reduce_op((*m_shared_mem)[thid], (*m_shared_mem)[thid + stride]);
                 };
                 sync_block();
                 stride >>= 1;
