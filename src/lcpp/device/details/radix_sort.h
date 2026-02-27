@@ -30,6 +30,25 @@ namespace luisa::parallel_primitive
 namespace details
 {
     using namespace luisa::compute;
+    template <NumericT KeyType>
+    class RadixSortResetModule : public LuisaModule
+    {
+      public:
+        using RadixSortResetKernel = Shader<1, Buffer<KeyType>, KeyType>;
+
+        U<RadixSortResetKernel> compile(Device& device)
+        {
+            U<RadixSortResetKernel> ms_radix_sort_reset_shader = nullptr;
+
+            lazy_compile(device,
+                         ms_radix_sort_reset_shader,
+                         [&](BufferVar<KeyType> d_bins_out, Var<KeyType> init_value) noexcept
+                         { d_bins_out.write(compute::dispatch_id().x, init_value); });
+            return ms_radix_sort_reset_shader;
+        };
+    };
+
+    using namespace luisa::compute;
     template <NumericT KeyType, bool IS_DESCENDING, size_t RADIX_BIT = 8u, size_t BLOCK_SIZE = details::BLOCK_SIZE, size_t WARP_SIZE = details::WARP_SIZE, size_t ITEMS_PER_THREAD = details::ITEMS_PER_THREAD>
     class RadixSortHistogramModule : public LuisaModule
     {

@@ -160,14 +160,26 @@ class DeviceRadixSort : public LuisaModule
         }
         auto d_ctrs_buffer = m_device.create_buffer<uint>(allocation_sizes[3]);
 
-        // TODO: Reset buffers on device
-        luisa::vector<uint> zeros_bins(allocation_sizes[0], 0u);
-        luisa::vector<uint> zeros_lookback(allocation_sizes[1], 0u);
-        luisa::vector<uint> zeros_ctrs(allocation_sizes[3], 0u);
-        stream << d_bins_buffer.copy_from(zeros_bins.data()) << d_ctrs_buffer.copy_from(zeros_ctrs.data());
-
         auto radix_sort_key = get_type_and_op_desc<KeyType, ValueType>()
                               + luisa::string(IS_DESCENDING ? "_desc" : "_asc");
+
+
+        // reset keys
+        using RadixSortReset        = details::RadixSortResetModule<uint>;
+        using RadixSortResetKernel  = RadixSortReset::RadixSortResetKernel;
+        auto ms_radix_sort_reset_it = ms_radix_sort_reset_map.find(radix_sort_key);
+        if(ms_radix_sort_reset_it == ms_radix_sort_reset_map.end())
+        {
+            auto shader = RadixSortReset().compile(m_device);
+            ms_radix_sort_reset_map.try_emplace(radix_sort_key, std::move(shader));
+            ms_radix_sort_reset_it = ms_radix_sort_reset_map.find(radix_sort_key);
+        }
+        auto ms_radix_sort_reset_ptr =
+            reinterpret_cast<RadixSortResetKernel*>(&(*ms_radix_sort_reset_it->second));
+
+        cmdlist << (*ms_radix_sort_reset_ptr)(d_bins_buffer.view(), 0u).dispatch(d_bins_buffer.size())
+                << (*ms_radix_sort_reset_ptr)(d_ctrs_buffer.view(), 0u).dispatch(d_ctrs_buffer.size());
+
         // radix sort histogram
         using RadixSortHistogram =
             details::RadixSortHistogramModule<KeyType, IS_DESCENDING, RADIX_BITS, BLOCK_SIZE, WARP_NUMS, ITEMS_PER_THREAD>;
@@ -279,8 +291,8 @@ class DeviceRadixSort : public LuisaModule
 
                 // LUISA_INFO("  Pass {}, Portion {}, portion_num_items: {}, num_blocks: {}", pass, portion, portion_num_items, num_blocks);
 
-                // Clear lookback buffer before each onesweep dispatch
-                stream << d_lookback_buffer.copy_from(zeros_lookback.data());
+                cmdlist << (*ms_radix_sort_reset_ptr)(d_lookback_buffer.view(), 0u)
+                               .dispatch(d_lookback_buffer.size());
 
                 // dispatch
                 cmdlist
@@ -301,7 +313,6 @@ class DeviceRadixSort : public LuisaModule
                            current_bit,
                            num_bit)
                            .dispatch(num_blocks * ONESWEEP_BLOCK_THREADS);
-                stream << cmdlist.commit() << synchronize();
             }
             if(!is_overwrite_okay && pass == 0)
             {
@@ -315,6 +326,8 @@ class DeviceRadixSort : public LuisaModule
             d_keys.selector ^= 1;
             d_values.selector ^= 1;
         }
+
+        stream << cmdlist.commit() << synchronize();
 
         d_bins_buffer.release();
         d_lookback_buffer.release();
@@ -330,5 +343,6 @@ class DeviceRadixSort : public LuisaModule
     luisa::unordered_map<luisa::string, luisa::shared_ptr<luisa::compute::Resource>> ms_radix_sort_histogram_map;
     luisa::unordered_map<luisa::string, luisa::shared_ptr<luisa::compute::Resource>> ms_radix_sort_exclusive_sum_map;
     luisa::unordered_map<luisa::string, luisa::shared_ptr<luisa::compute::Resource>> ms_radix_sort_one_sweep_map;
+    luisa::unordered_map<luisa::string, luisa::shared_ptr<luisa::compute::Resource>> ms_radix_sort_reset_map;
 };
 }  // namespace luisa::parallel_primitive
