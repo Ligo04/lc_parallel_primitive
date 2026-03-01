@@ -239,7 +239,7 @@ static luisa::compute::Callable get_lane_mask_ge = []()
 { return 0xFFFFFFFFu << compute::warp_lane_id(); };
 
 static luisa::compute::Callable get_lane_mask_le = []()
-{ return (1u << (compute::warp_lane_id() + 1)) - 1; };
+{ return 0xFFFFFFFFu >> (31u - compute::warp_lane_id()); };
 
 template <size_t LOGIC_WARP_SIZE>
 inline luisa::compute::UInt warp_mask(luisa::compute::UInt warp_id)
