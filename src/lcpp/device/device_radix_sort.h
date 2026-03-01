@@ -171,8 +171,8 @@ class DeviceRadixSort : public LuisaModule
         if(ms_radix_sort_reset_it == ms_radix_sort_reset_map.end())
         {
             auto shader = RadixSortReset().compile(m_device);
-            ms_radix_sort_reset_map.try_emplace(radix_sort_key, std::move(shader));
-            ms_radix_sort_reset_it = ms_radix_sort_reset_map.find(radix_sort_key);
+            auto [it, inserted] = ms_radix_sort_reset_map.try_emplace(radix_sort_key, std::move(shader));
+            ms_radix_sort_reset_it = it;
         }
         auto ms_radix_sort_reset_ptr =
             reinterpret_cast<RadixSortResetKernel*>(&(*ms_radix_sort_reset_it->second));
@@ -188,8 +188,8 @@ class DeviceRadixSort : public LuisaModule
         if(ms_radix_sort_histogram_it == ms_radix_sort_histogram_map.end())
         {
             auto shader = RadixSortHistogram().compile(m_device);
-            ms_radix_sort_histogram_map.try_emplace(radix_sort_key, std::move(shader));
-            ms_radix_sort_histogram_it = ms_radix_sort_histogram_map.find(radix_sort_key);
+            auto [it, inserted] = ms_radix_sort_histogram_map.try_emplace(radix_sort_key, std::move(shader));
+            ms_radix_sort_histogram_it = it;
         }
         auto ms_radix_sort_histogram_ptr =
             reinterpret_cast<RadixSortHistogramKernel*>(&(*ms_radix_sort_histogram_it->second));
@@ -231,8 +231,9 @@ class DeviceRadixSort : public LuisaModule
         if(ms_radix_sort_exclusive_sum_it == ms_radix_sort_exclusive_sum_map.end())
         {
             auto shader = RadixSortExclusiveSum().compile(m_device);
-            ms_radix_sort_exclusive_sum_map.try_emplace(radix_sort_key, std::move(shader));
-            ms_radix_sort_exclusive_sum_it = ms_radix_sort_exclusive_sum_map.find(radix_sort_key);
+            auto [it, inserted] =
+                ms_radix_sort_exclusive_sum_map.try_emplace(radix_sort_key, std::move(shader));
+            ms_radix_sort_exclusive_sum_it = it;
         }
         auto ms_radix_sort_exclusive_sum_ptr =
             reinterpret_cast<RadixSortExclusiveSumKernel*>(&(*ms_radix_sort_exclusive_sum_it->second));
