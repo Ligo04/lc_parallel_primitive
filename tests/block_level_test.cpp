@@ -21,14 +21,22 @@ int main(int argc, char* argv[])
 {
     log_level_verbose();
 
-    Context context{argv[1]};
+    Context context{argv[0]};
+    luisa::string_view backend_name;
 #ifdef _WIN32
-    Device device = context.create_device("dx");
+    backend_name = "dx";
 #elif __APPLE__
-    Device device = context.create_device("metal");
+    backend_name = "metal";
 #else
-    Device device = context.create_device("cuda");
+    backend_name = "cuda";
 #endif
+    if (argc > 1) {
+        backend_name = argv[1];
+        LUISA_INFO("Use {} backend from argv[1].", backend_name);
+    } else {
+        LUISA_INFO("Use {} backend defaultly.", backend_name);
+    }
+    Device device = context.create_device(backend_name);
     CommandList cmdlist;
     Stream      stream = device.create_stream();
 
