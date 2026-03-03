@@ -21,14 +21,34 @@ int main(int argc, char* argv[])
 {
     log_level_verbose();
 
-    Context context{argv[1]};
+    luisa::string_view ctx_dir;
+    luisa::string_view backend_name;
 #ifdef _WIN32
-    Device device = context.create_device("cuda");
+    backend_name = "cuda";
 #elif __APPLE__
-    Device device = context.create_device("metal");
+    backend_name = "metal";
 #else
-    Device device = context.create_device("cuda");
+    backend_name = "cuda";
 #endif
+
+    // Parse command-line arguments: --ctx=./dir --backend=dx
+    for(int i = 1; i < argc; ++i)
+    {
+        luisa::string_view arg(argv[i]);
+        if(arg.starts_with("--ctx="))
+        {
+            ctx_dir = arg.substr(6);
+            LUISA_INFO("Use context directory from command-line: {}", ctx_dir);
+        }
+        else if(arg.starts_with("--backend="))
+        {
+            backend_name = arg.substr(10);
+            LUISA_INFO("Use backend from command-line: {}", backend_name);
+        }
+    }
+
+    Context     context{ctx_dir.empty() ? argv[0] : ctx_dir};
+    Device      device = context.create_device(backend_name);
     CommandList cmdlist;
     Stream      stream = device.create_stream();
 
@@ -43,20 +63,13 @@ int main(int argc, char* argv[])
         auto scan_tile_value_partial_buffer   = device.create_buffer<int>(WARP_SIZE + NUM_TILES);
         auto scan_tile_value_inclusive_buffer = device.create_buffer<int>(WARP_SIZE + NUM_TILES);
 
-        luisa::unique_ptr<Shader<1, Buffer<uint>, Buffer<int>, Buffer<int>, uint>> init_kernel = nullptr;
+        luisa::unique_ptr<Shader<1, Buffer<uint>, uint>> init_kernel = nullptr;
         lazy_compile(device,
                      init_kernel,
-                     [&](BufferVar<uint> tile_status, BufferVar<int> tile_partial, BufferVar<int> tile_inclusive, UInt num_tiles) noexcept
-                     {
-                         ScanTileStateViewer viewer{tile_status, tile_partial, tile_inclusive};
-                         viewer.InitializeWardStatus(num_tiles);
-                     });
+                     [&](BufferVar<uint> tile_status, UInt num_tiles) noexcept
+                     { InitializeWardStatus(num_tiles, tile_status); });
 
-        cmdlist << (*init_kernel)(scan_tile_status_buffer.view(),
-                                  scan_tile_value_partial_buffer.view(),
-                                  scan_tile_value_inclusive_buffer.view(),
-                                  NUM_TILES)
-                       .dispatch(num_blocks * BLOCK_SIZE);
+        cmdlist << (*init_kernel)(scan_tile_status_buffer.view(), NUM_TILES).dispatch(num_blocks * BLOCK_SIZE);
         stream << cmdlist.commit() << synchronize();
 
         auto scan_op = [](const Var<int>& a, const Var<int>& b) noexcept { return a + b; };
@@ -80,9 +93,9 @@ int main(int argc, char* argv[])
                          using tile_prefix_op =
                              TilePrefixCallbackOp<int, decltype(scan_op), ScanTileStateViewer<int>, no_delay_constructor<int>>;
 
-                         auto temp_storage = new luisa::compute::Shared<TilePrefixTempStorage<int>>{1};
+                         auto temp_storage = luisa::compute::Shared<TilePrefixTempStorage<int>>(1);
 
-                         tile_prefix_op prefix(viewer, temp_storage, scan_op);
+                         tile_prefix_op prefix(viewer, &temp_storage, scan_op);
                          const auto     tile_idx        = prefix.GetTileIndex();
                          compute::Int   block_aggregate = 1;
                          $if(tile_idx == 0)
@@ -171,20 +184,13 @@ int main(int argc, char* argv[])
         auto scan_tile_value_partial_buffer   = device.create_buffer<KVP>(WARP_SIZE + NUM_TILES);
         auto scan_tile_value_inclusive_buffer = device.create_buffer<KVP>(WARP_SIZE + NUM_TILES);
 
-        luisa::unique_ptr<Shader<1, Buffer<uint>, Buffer<KVP>, Buffer<KVP>, uint>> init_kernel = nullptr;
+        luisa::unique_ptr<Shader<1, Buffer<uint>, uint>> init_kernel = nullptr;
         lazy_compile(device,
                      init_kernel,
-                     [&](BufferVar<uint> tile_status, BufferVar<KVP> tile_partial, BufferVar<KVP> tile_inclusive, UInt num_tiles) noexcept
-                     {
-                         ScanTileStateViewer viewer{tile_status, tile_partial, tile_inclusive};
-                         viewer.InitializeWardStatus(num_tiles);
-                     });
+                     [&](BufferVar<uint> tile_status, UInt num_tiles) noexcept
+                     { InitializeWardStatus(num_tiles, tile_status); });
 
-        cmdlist << (*init_kernel)(scan_tile_status_buffer.view(),
-                                  scan_tile_value_partial_buffer.view(),
-                                  scan_tile_value_inclusive_buffer.view(),
-                                  NUM_TILES)
-                       .dispatch(num_blocks * BLOCK_SIZE);
+        cmdlist << (*init_kernel)(scan_tile_status_buffer.view(), NUM_TILES).dispatch(num_blocks * BLOCK_SIZE);
         stream << cmdlist.commit() << synchronize();
 
 
@@ -207,9 +213,9 @@ int main(int argc, char* argv[])
                          using tile_prefix_op =
                              TilePrefixCallbackOp<KVP, KVPScanOp, ScanTileStateViewer<KVP>>;
 
-                         auto temp_storage = new luisa::compute::Shared<TilePrefixTempStorage<KVP>>{1};
+                         auto temp_storage = luisa::compute::Shared<TilePrefixTempStorage<KVP>>(1);
                          KVPScanOp         scan_op{sum_op};
-                         tile_prefix_op    prefix(viewer, temp_storage, scan_op);
+                         tile_prefix_op    prefix(viewer, &temp_storage, scan_op);
                          const auto        tile_idx = prefix.GetTileIndex();
                          compute::Var<KVP> block_aggregate;
                          block_aggregate.key   = def(1);

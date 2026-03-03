@@ -25,14 +25,30 @@ int main(int argc, char* argv[])
 {
     log_level_verbose();
 
-    Context context{argv[1]};
+    luisa::string_view ctx_dir;
+    luisa::string_view backend_name;
 #ifdef _WIN32
-    Device device = context.create_device("cuda");
+    backend_name = "cuda";
 #elif __APPLE__
-    Device device = context.create_device("metal");
+    backend_name = "metal";
 #else
-    Device device = context.create_device("cuda");
+    backend_name = "cuda";
 #endif
+
+    // Parse command-line arguments: --ctx=./dir --backend=dx
+    for (int i = 1; i < argc; ++i) {
+        luisa::string_view arg(argv[i]);
+        if (arg.starts_with("--ctx=")) {
+            ctx_dir = arg.substr(6);
+            LUISA_INFO("Use context directory from command-line: {}", ctx_dir);
+        } else if (arg.starts_with("--backend=")) {
+            backend_name = arg.substr(10);
+            LUISA_INFO("Use backend from command-line: {}", backend_name);
+        }
+    }
+
+    Context context{ctx_dir.empty() ? argv[0] : ctx_dir};
+    Device device = context.create_device(backend_name);
     CommandList cmdlist;
     Stream      stream = device.create_stream();
 

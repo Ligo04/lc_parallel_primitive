@@ -20,9 +20,11 @@ local function add_test_target(file_name)
         -- add run path for luisa-compute
         on_config(function (target)
             if has_config('lc_use_xrepo') then
-                target:add("runargs", path.join(target:pkg("luisa-compute"):installdir(), "bin"))
-            else 
-                target:add("runargs", path.absolute(target:targetdir()))    
+                if not os.exists(target:targetdir()) then
+                    os.mkdir(target:targetdir())
+                end
+                os.vcp(path.join(target:pkg("luisa-compute"):installdir(), "bin/*.dll"), target:targetdir())
+                os.vcp(path.join(target:pkg("luisa-compute"):installdir(), "bin/*.exe"), target:targetdir())
             end
         end)
     target_end()

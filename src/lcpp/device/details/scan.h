@@ -51,8 +51,7 @@ namespace details
                             BufferVar<Type4Byte> tile_inclusive,
                             UInt                 num_tiles) noexcept
                          {
-                             TileStateViewer tile_state_viewer(tile_status, tile_partial, tile_inclusive);
-                             tile_state_viewer.InitializeWardStatus(num_tiles);
+                             InitializeWardStatus(num_tiles, tile_status);
                          });
             return scan_tile_state_init_shader;
         }
