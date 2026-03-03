@@ -77,19 +77,6 @@ struct ScanTileStateViewer
         , d_tile_inclusive(tile_inclusive) {};
 
 
-    void InitializeWardStatus(compute::UInt num_tile) noexcept
-    {
-        compute::UInt tile_idx = compute::dispatch_id().x;
-        $if(tile_idx < num_tile)
-        {
-            d_tile_status.write(compute::UInt(TILE_STATUS_PADDING) + tile_idx,
-                                compute::def(StatusWordT(ScanTileStatus::SCAN_TILE_INVALID)));
-        };
-        $if(compute::block_id().x == 0 & compute::thread_x() < compute::UInt(TILE_STATUS_PADDING))
-        {
-            d_tile_status.write(compute::thread_x(), compute::def(StatusWordT(ScanTileStatus::SCAN_TILE_OBB)));
-        };
-    };
 
     void SetInclusive(compute::Int tile_index, const compute::Var<T>& tile_inclusive) noexcept
     {
@@ -122,6 +109,19 @@ struct ScanTileStateViewer
         {
             out_value = d_tile_inclusive.volatile_read(compute::Int(TILE_STATUS_PADDING) + tile_index);
         };
+    };
+};
+static void InitializeWardStatus(compute::UInt num_tile, compute::BufferVar<compute::uint>& d_tile_status) noexcept
+{
+    compute::UInt tile_idx = compute::dispatch_id().x;
+    $if(tile_idx < num_tile)
+    {
+        d_tile_status.write(compute::UInt(ScanTileStateViewer<int>::TILE_STATUS_PADDING) + tile_idx,
+                            compute::def(ScanTileStateViewer<int>::StatusWordT(ScanTileStatus::SCAN_TILE_INVALID)));
+    };
+    $if(compute::block_id().x == 0 & compute::thread_x() < compute::UInt(ScanTileStateViewer<int>::TILE_STATUS_PADDING))
+    {
+        d_tile_status.write(compute::thread_x(), compute::def(ScanTileStateViewer<int>::StatusWordT(ScanTileStatus::SCAN_TILE_OBB)));
     };
 };
 

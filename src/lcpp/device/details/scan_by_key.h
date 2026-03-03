@@ -60,8 +60,7 @@ namespace details
                          {
                              set_block_size(BLOCK_SIZE);
 
-                             TileStatusViewer tile_state_viewer(tile_state, tile_partial, tile_inclusive);
-                             tile_state_viewer.InitializeWardStatus(num_tiles);
+                             InitializeWardStatus(num_tiles, tile_state);
                              UInt tid        = dispatch_id().x;
                              UInt tile_items = UInt(ITEMS_PER_THREAD) * block_size_x();
                              UInt tile_start = tid * tile_items;

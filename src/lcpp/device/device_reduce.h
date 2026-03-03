@@ -373,7 +373,7 @@ class DeviceReduce : public LuisaModule
         }
         auto ms_scan_tile_state_init_ptr =
             reinterpret_cast<ReduceByKeyTileStateInitKernel*>(&(*ms_scan_tile_state_init_it->second));
-        cmdlist << (*ms_scan_tile_state_init_ptr)(tile_states, tile_partial, tile_inclusive, num_tiles)
+        cmdlist << (*ms_scan_tile_state_init_ptr)(tile_states, num_tiles)
                        .dispatch(num_tiles * m_block_size);
         // reduce by key
         auto key                 = get_type_and_op_desc<KeyType, ValueType>(reduce_op);

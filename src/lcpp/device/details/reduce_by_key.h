@@ -38,7 +38,7 @@ namespace details
         using TileStatusViewer = ScanTileStateViewer<FlagValuePairT>;
 
         using ScanTileStateInitKernel =
-            Shader<1, Buffer<uint>, Buffer<FlagValuePairT>, Buffer<FlagValuePairT>, uint>;
+            Shader<1, Buffer<uint>, uint>;
         using ReduceByKeyKernel =
             Shader<1, Buffer<uint>, Buffer<FlagValuePairT>, Buffer<FlagValuePairT>, Buffer<KeyType>, Buffer<ValueType>, Buffer<KeyType>, Buffer<ValueType>, Buffer<uint>, uint>;
 
@@ -49,13 +49,10 @@ namespace details
             lazy_compile(device,
                          ms_scan_tile_state_init_shader,
                          [](BufferVar<uint>           tile_state,
-                            BufferVar<FlagValuePairT> tile_states,
-                            BufferVar<FlagValuePairT> tile_prefixes,
                             UInt                      num_tiles) noexcept
                          {
                              set_block_size(BLOCK_SIZE);
-                             TileStatusViewer tile_state_viewer(tile_state, tile_states, tile_prefixes);
-                             tile_state_viewer.InitializeWardStatus(num_tiles);
+                             InitializeWardStatus(num_tiles, tile_state);
                          });
 
             return ms_scan_tile_state_init_shader;

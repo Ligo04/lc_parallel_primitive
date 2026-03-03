@@ -51,18 +51,15 @@ int main(int argc, char* argv[])
         auto scan_tile_value_partial_buffer   = device.create_buffer<int>(WARP_SIZE + NUM_TILES);
         auto scan_tile_value_inclusive_buffer = device.create_buffer<int>(WARP_SIZE + NUM_TILES);
 
-        luisa::unique_ptr<Shader<1, Buffer<uint>, Buffer<int>, Buffer<int>, uint>> init_kernel = nullptr;
+        luisa::unique_ptr<Shader<1, Buffer<uint>, uint>> init_kernel = nullptr;
         lazy_compile(device,
                      init_kernel,
-                     [&](BufferVar<uint> tile_status, BufferVar<int> tile_partial, BufferVar<int> tile_inclusive, UInt num_tiles) noexcept
+                     [&](BufferVar<uint> tile_status, UInt num_tiles) noexcept
                      {
-                         ScanTileStateViewer viewer{tile_status, tile_partial, tile_inclusive};
-                         viewer.InitializeWardStatus(num_tiles);
+                         InitializeWardStatus(num_tiles, tile_status);
                      });
 
         cmdlist << (*init_kernel)(scan_tile_status_buffer.view(),
-                                  scan_tile_value_partial_buffer.view(),
-                                  scan_tile_value_inclusive_buffer.view(),
                                   NUM_TILES)
                        .dispatch(num_blocks * BLOCK_SIZE);
         stream << cmdlist.commit() << synchronize();
@@ -179,18 +176,15 @@ int main(int argc, char* argv[])
         auto scan_tile_value_partial_buffer   = device.create_buffer<KVP>(WARP_SIZE + NUM_TILES);
         auto scan_tile_value_inclusive_buffer = device.create_buffer<KVP>(WARP_SIZE + NUM_TILES);
 
-        luisa::unique_ptr<Shader<1, Buffer<uint>, Buffer<KVP>, Buffer<KVP>, uint>> init_kernel = nullptr;
+        luisa::unique_ptr<Shader<1, Buffer<uint>, uint>> init_kernel = nullptr;
         lazy_compile(device,
                      init_kernel,
-                     [&](BufferVar<uint> tile_status, BufferVar<KVP> tile_partial, BufferVar<KVP> tile_inclusive, UInt num_tiles) noexcept
+                     [&](BufferVar<uint> tile_status, UInt num_tiles) noexcept
                      {
-                         ScanTileStateViewer viewer{tile_status, tile_partial, tile_inclusive};
-                         viewer.InitializeWardStatus(num_tiles);
+                         InitializeWardStatus(num_tiles, tile_status);
                      });
 
         cmdlist << (*init_kernel)(scan_tile_status_buffer.view(),
-                                  scan_tile_value_partial_buffer.view(),
-                                  scan_tile_value_inclusive_buffer.view(),
                                   NUM_TILES)
                        .dispatch(num_blocks * BLOCK_SIZE);
         stream << cmdlist.commit() << synchronize();
