@@ -155,7 +155,7 @@ class TilePrefixCallbackOp : public LuisaModule
     Var<T>          inclusive_prefix;
 
     TilePrefixCallbackOp(ScanTileStateT&            tile_state,
-                         SmemTypePtr<TempStorageT>& temp_storage,
+                         SmemTypePtr<TempStorageT> temp_storage,
                          ScanOpT                    scan_op,
                          compute::UInt              tile_index)
         : tile_status{tile_state}
@@ -163,7 +163,7 @@ class TilePrefixCallbackOp : public LuisaModule
         , scan_op{scan_op}
         , tile_index{tile_index} {};
 
-    TilePrefixCallbackOp(ScanTileStateT& tile_state, SmemTypePtr<TempStorageT>& temp_storage, ScanOpT scan_op)
+    TilePrefixCallbackOp(ScanTileStateT& tile_state, SmemTypePtr<TempStorageT> temp_storage, ScanOpT scan_op)
         : TilePrefixCallbackOp(tile_state, temp_storage, scan_op, compute::block_x()) {};
 
   public:

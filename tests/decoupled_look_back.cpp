@@ -32,19 +32,23 @@ int main(int argc, char* argv[])
 #endif
 
     // Parse command-line arguments: --ctx=./dir --backend=dx
-    for (int i = 1; i < argc; ++i) {
+    for(int i = 1; i < argc; ++i)
+    {
         luisa::string_view arg(argv[i]);
-        if (arg.starts_with("--ctx=")) {
+        if(arg.starts_with("--ctx="))
+        {
             ctx_dir = arg.substr(6);
             LUISA_INFO("Use context directory from command-line: {}", ctx_dir);
-        } else if (arg.starts_with("--backend=")) {
+        }
+        else if(arg.starts_with("--backend="))
+        {
             backend_name = arg.substr(10);
             LUISA_INFO("Use backend from command-line: {}", backend_name);
         }
     }
 
-    Context context{ctx_dir.empty() ? argv[0] : ctx_dir};
-    Device device = context.create_device(backend_name);
+    Context     context{ctx_dir.empty() ? argv[0] : ctx_dir};
+    Device      device = context.create_device(backend_name);
     CommandList cmdlist;
     Stream      stream = device.create_stream();
 
@@ -63,13 +67,9 @@ int main(int argc, char* argv[])
         lazy_compile(device,
                      init_kernel,
                      [&](BufferVar<uint> tile_status, UInt num_tiles) noexcept
-                     {
-                         InitializeWardStatus(num_tiles, tile_status);
-                     });
+                     { InitializeWardStatus(num_tiles, tile_status); });
 
-        cmdlist << (*init_kernel)(scan_tile_status_buffer.view(),
-                                  NUM_TILES)
-                       .dispatch(num_blocks * BLOCK_SIZE);
+        cmdlist << (*init_kernel)(scan_tile_status_buffer.view(), NUM_TILES).dispatch(num_blocks * BLOCK_SIZE);
         stream << cmdlist.commit() << synchronize();
 
         auto scan_op = [](const Var<int>& a, const Var<int>& b) noexcept { return a + b; };
@@ -93,9 +93,9 @@ int main(int argc, char* argv[])
                          using tile_prefix_op =
                              TilePrefixCallbackOp<int, decltype(scan_op), ScanTileStateViewer<int>, no_delay_constructor<int>>;
 
-                         auto temp_storage = new luisa::compute::Shared<TilePrefixTempStorage<int>>{1};
+                         auto temp_storage = luisa::compute::Shared<TilePrefixTempStorage<int>>(1);
 
-                         tile_prefix_op prefix(viewer, temp_storage, scan_op);
+                         tile_prefix_op prefix(viewer, &temp_storage, scan_op);
                          const auto     tile_idx        = prefix.GetTileIndex();
                          compute::Int   block_aggregate = 1;
                          $if(tile_idx == 0)
@@ -188,13 +188,9 @@ int main(int argc, char* argv[])
         lazy_compile(device,
                      init_kernel,
                      [&](BufferVar<uint> tile_status, UInt num_tiles) noexcept
-                     {
-                         InitializeWardStatus(num_tiles, tile_status);
-                     });
+                     { InitializeWardStatus(num_tiles, tile_status); });
 
-        cmdlist << (*init_kernel)(scan_tile_status_buffer.view(),
-                                  NUM_TILES)
-                       .dispatch(num_blocks * BLOCK_SIZE);
+        cmdlist << (*init_kernel)(scan_tile_status_buffer.view(), NUM_TILES).dispatch(num_blocks * BLOCK_SIZE);
         stream << cmdlist.commit() << synchronize();
 
 
@@ -217,9 +213,9 @@ int main(int argc, char* argv[])
                          using tile_prefix_op =
                              TilePrefixCallbackOp<KVP, KVPScanOp, ScanTileStateViewer<KVP>>;
 
-                         auto temp_storage = new luisa::compute::Shared<TilePrefixTempStorage<KVP>>{1};
+                         auto temp_storage = luisa::compute::Shared<TilePrefixTempStorage<KVP>>(1);
                          KVPScanOp         scan_op{sum_op};
-                         tile_prefix_op    prefix(viewer, temp_storage, scan_op);
+                         tile_prefix_op    prefix(viewer, &temp_storage, scan_op);
                          const auto        tile_idx = prefix.GetTileIndex();
                          compute::Var<KVP> block_aggregate;
                          block_aggregate.key   = def(1);
