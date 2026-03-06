@@ -36,19 +36,23 @@ int main(int argc, char* argv[])
 #endif
 
     // Parse command-line arguments: --ctx=./dir --backend=dx
-    for (int i = 1; i < argc; ++i) {
+    for(int i = 1; i < argc; ++i)
+    {
         luisa::string_view arg(argv[i]);
-        if (arg.starts_with("--ctx=")) {
+        if(arg.starts_with("--ctx="))
+        {
             ctx_dir = arg.substr(6);
             LUISA_INFO("Use context directory from command-line: {}", ctx_dir);
-        } else if (arg.starts_with("--backend=")) {
+        }
+        else if(arg.starts_with("--backend="))
+        {
             backend_name = arg.substr(10);
             LUISA_INFO("Use backend from command-line: {}", backend_name);
         }
     }
 
-    Context context{ctx_dir.empty() ? argv[0] : ctx_dir};
-    Device device = context.create_device(backend_name);
+    Context     context{ctx_dir.empty() ? argv[0] : ctx_dir};
+    Device      device = context.create_device(backend_name);
     Stream      stream = device.create_stream();
     CommandList cmdlist;
 
@@ -218,7 +222,7 @@ int main(int argc, char* argv[])
                 auto expected_max =
                     std::max_element(input_data.begin() + i,
                                      input_data.begin() + i + std::min(array_size - i, items_per_segment));
-                LUISA_INFO("Segment {}: expected sum = {}, got {}",
+                LUISA_INFO("Segment {}: expected max = {}, got {}",
                            i / items_per_segment,
                            *expected_max,
                            result[i / items_per_segment]);
@@ -259,7 +263,7 @@ int main(int argc, char* argv[])
             {
                 auto expected_min =
                     std::min_element(input_data.begin() + i, input_data.begin() + i + items_per_segment);
-                LUISA_INFO("Segment {}: expected max = {}, got {}",
+                LUISA_INFO("Segment {}: expected arg min = {}, got {}",
                            i / items_per_segment,
                            *expected_min,
                            result[i / items_per_segment]);

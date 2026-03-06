@@ -429,12 +429,12 @@ class DeviceSegmentReduce : public LuisaModule
         const auto num_invocations = ceil_div(num_segments, num_segments_per_invocation);
 
         auto key              = luisa::string{luisa::compute::Type::of<Type4Byte>()->description()};
-        auto ms_arg_assign_it = ms_arg_assign_map.find(key);
-        if(ms_arg_assign_it == ms_arg_assign_map.end())
+        auto ms_arg_assign_it = ms_arg_fixed_size_assign_map.find(key);
+        if(ms_arg_assign_it == ms_arg_fixed_size_assign_map.end())
         {
-            auto shader = ArgReduce().compile_arg_assign_shader(m_device);
-            ms_arg_assign_map.try_emplace(key, std::move(shader));
-            ms_arg_assign_it = ms_arg_assign_map.find(key);
+            auto shader = ArgReduce().compile_arg_fixed_size_assign_shader(m_device);
+            ms_arg_fixed_size_assign_map.try_emplace(key, std::move(shader));
+            ms_arg_assign_it = ms_arg_fixed_size_assign_map.find(key);
         }
         auto ms_arg_assign_ptr = reinterpret_cast<ArgAssignShader*>(&(*ms_arg_assign_it->second));
         cmdlist << (*ms_arg_assign_ptr)(d_kv_in, segment_size, d_index_out, d_value_out).dispatch(num_segments * WARP_NUMS);
@@ -446,5 +446,6 @@ class DeviceSegmentReduce : public LuisaModule
 
     luisa::unordered_map<luisa::string, luisa::shared_ptr<luisa::compute::Resource>> ms_arg_construct_map;
     luisa::unordered_map<luisa::string, luisa::shared_ptr<luisa::compute::Resource>> ms_arg_assign_map;
+    luisa::unordered_map<luisa::string, luisa::shared_ptr<luisa::compute::Resource>> ms_arg_fixed_size_assign_map;
 };
 }  // namespace luisa::parallel_primitive

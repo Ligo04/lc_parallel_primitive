@@ -23,8 +23,16 @@ local function add_test_target(file_name)
                 if not os.exists(target:targetdir()) then
                     os.mkdir(target:targetdir())
                 end
-                os.vcp(path.join(target:pkg("luisa-compute"):installdir(), "bin/*.dll"), target:targetdir())
-                os.vcp(path.join(target:pkg("luisa-compute"):installdir(), "bin/*.exe"), target:targetdir())
+                if is_host("windows") then
+                    os.vcp(path.join(target:pkg("luisa-compute"):installdir(), "bin/*.dll"), target:targetdir())
+                    os.vcp(path.join(target:pkg("luisa-compute"):installdir(), "bin/luisa_nvrtc.exe"), target:targetdir())
+                elseif is_host("macosx") then
+                    os.vcp(path.join(target:pkg("luisa-compute"):installdir(), "bin/*.dylib"), target:targetdir())
+                    os.vcp(path.join(target:pkg("luisa-compute"):installdir(), "bin/luisa_nvrtc"), target:targetdir())
+                else
+                    os.vcp(path.join(target:pkg("luisa-compute"):installdir(), "bin/*.so"), target:targetdir())
+                    os.vcp(path.join(target:pkg("luisa-compute"):installdir(), "bin/luisa_nvrtc"), target:targetdir())
+                end
             end
         end)
     target_end()
