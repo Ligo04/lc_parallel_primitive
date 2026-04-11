@@ -73,8 +73,13 @@ int main(int argc, char* argv[])
             Buffer<Type4Byte>      d_output = device.create_buffer<Type4Byte>(1);
             std::vector<Type4Byte> host_input(num_items, 1);
             stream << d_input.copy_from(host_input.data()) << synchronize();
+
+            // CUB-style: first get temp storage size, then create buffer
+            size_t temp_bytes = DeviceReduce<>::GetTempStorageBytes<Type4Byte>(num_items);
+            auto temp_buffer = device.create_buffer<uint>(bytes_to_uint_count(temp_bytes));
+
             CommandList cmdlist;
-            reducer.Sum(cmdlist, d_input.view(), d_output.view(), num_items);
+            reducer.Sum(cmdlist, temp_buffer.view(), d_input.view(), d_output.view(), num_items);
             stream << cmdlist.commit() << synchronize();
             std::vector<Type4Byte> host_output(1);
             stream << d_output.copy_to(host_output.data()) << synchronize();
@@ -96,9 +101,13 @@ int main(int argc, char* argv[])
 
         auto square_op = [](const Var<int>& x) noexcept { return x * x; };
 
+        // CUB-style: get temp storage size
+        size_t temp_bytes = DeviceReduce<>::GetTempStorageBytes<int32>(array_size);
+        auto temp_buffer = device.create_buffer<uint>(bytes_to_uint_count(temp_bytes));
+
         CommandList cmdlist;
         reducer.TransformReduce(
-            cmdlist, in_buffer.view(), out_buffer.view(), in_buffer.size(), max_reduce_op, square_op, 0);
+            cmdlist, temp_buffer.view(), in_buffer.view(), out_buffer.view(), in_buffer.size(), max_reduce_op, square_op, 0);
         stream << cmdlist.commit() << synchronize();
         stream << out_buffer.copy_to(result.data()) << synchronize();  // 输出结果
 
@@ -113,8 +122,14 @@ int main(int argc, char* argv[])
         auto                 in_buffer  = device.create_buffer<int32>(array_size);
         auto                 out_buffer = device.create_buffer<int32>(1);
         luisa::vector<int32> result(1);
-        CommandList          cmdlist;
-        reducer.Min(cmdlist, in_buffer.view(), out_buffer.view(), in_buffer.size());
+        stream << in_buffer.copy_from(input_data.data()) << synchronize();
+
+        // CUB-style: get temp storage size
+        size_t temp_bytes = DeviceReduce<>::GetTempStorageBytes<int32>(array_size);
+        auto temp_buffer = device.create_buffer<uint>(bytes_to_uint_count(temp_bytes));
+
+        CommandList cmdlist;
+        reducer.Min(cmdlist, temp_buffer.view(), in_buffer.view(), out_buffer.view(), in_buffer.size());
         stream << cmdlist.commit() << synchronize();
         stream << out_buffer.copy_to(result.data()) << synchronize();  // 输出结果
         LUISA_INFO("Result Min(0-{}): {}",
@@ -132,8 +147,17 @@ int main(int argc, char* argv[])
         luisa::vector<int32> result(1);
 
         stream << in_buffer.copy_from(input_data.data()) << synchronize();
+
+        // CUB-style: get temp storage size
+        size_t temp_bytes = DeviceReduce<>::GetTempStorageBytes<int32>(array_size);
+        auto temp_buffer = device.create_buffer<uint>(bytes_to_uint_count(temp_bytes));
+
         CommandList cmdlist;
-        reducer.Max(cmdlist, in_buffer.view(), out_buffer.view(), in_buffer.size());
+        reducer.Max(cmdlist,
+                    temp_buffer.view(),
+                    in_buffer.view(),
+                    out_buffer.view(),
+                    in_buffer.size());
         stream << cmdlist.commit() << synchronize();
         stream << out_buffer.copy_to(result.data()) << synchronize();  // 输出结果
         LUISA_INFO("Result Max(0-1023): {}", *std::max_element(input_data.begin(), input_data.end()));
@@ -151,9 +175,14 @@ int main(int argc, char* argv[])
         auto                       index_out_buffer = device.create_buffer<luisa::uint>(1);
         luisa::vector<int32>       result(1);
         luisa::vector<luisa::uint> index_result(1);
-        CommandList                cmdlist;
+
+        // CUB-style: get temp storage size for ArgMin
+        size_t temp_bytes = DeviceReduce<>::GetArgTempStorageBytes<int32>(array_size);
+        auto temp_buffer = device.create_buffer<uint>(bytes_to_uint_count(temp_bytes));
+
+        CommandList cmdlist;
         reducer.ArgMin(
-            cmdlist, in_buffer.view(), out_buffer.view(), index_out_buffer.view(), in_buffer.size());
+            cmdlist, temp_buffer.view(), in_buffer.view(), out_buffer.view(), index_out_buffer.view(), in_buffer.size());
         stream << cmdlist.commit() << synchronize();
         stream << out_buffer.copy_to(result.data()) << synchronize();              // 输出结果
         stream << index_out_buffer.copy_to(index_result.data()) << synchronize();  // 输出结果
@@ -176,9 +205,13 @@ int main(int argc, char* argv[])
         luisa::vector<int32>       result(1);
         luisa::vector<luisa::uint> index_result(1);
 
+        // CUB-style: get temp storage size for ArgMax
+        size_t temp_bytes = DeviceReduce<>::GetArgTempStorageBytes<int32>(array_size);
+        auto temp_buffer = device.create_buffer<uint>(bytes_to_uint_count(temp_bytes));
+
         CommandList cmdlist;
         reducer.ArgMax(
-            cmdlist, in_buffer.view(), out_buffer.view(), index_out_buffer.view(), in_buffer.size());
+            cmdlist, temp_buffer.view(), in_buffer.view(), out_buffer.view(), index_out_buffer.view(), in_buffer.size());
         stream << cmdlist.commit() << synchronize();
         stream << out_buffer.copy_to(result.data()) << synchronize();
         stream << index_out_buffer.copy_to(index_result.data()) << synchronize();
@@ -215,9 +248,15 @@ int main(int argc, char* argv[])
 
         stream << key_buffer.copy_from(input_keys.data()) << synchronize();
         stream << value_buffer.copy_from(input_data.data()) << synchronize();
+
+        // CUB-style: get temp storage size for ReduceByKey
+        size_t temp_bytes = DeviceReduce<>::GetReduceByKeyTempStorageBytes<int32, int32>(array_size);
+        auto temp_buffer = device.create_buffer<uint>(bytes_to_uint_count(temp_bytes));
+
         CommandList cmdlist;
         reducer.ReduceByKey(
             cmdlist,
+            temp_buffer.view(),
             key_buffer.view(),
             value_buffer.view(),
             unique_keys_buffer.view(),

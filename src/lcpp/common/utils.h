@@ -156,6 +156,18 @@ static void get_temp_size_scan(size_t& temp_storage_size, size_t m_block_size, s
     temp_storage_size += 1;
 }
 
+// Helper: round up byte_offset to the given alignment
+inline size_t align_up_uint(size_t byte_offset, size_t alignment)
+{
+    return (byte_offset + alignment - 1) / alignment * alignment;
+}
+
+// Helper: convert byte size to uint element count (round up)
+inline size_t bytes_to_uint_count(size_t byte_size)
+{
+    return (byte_size + sizeof(uint) - 1) / sizeof(uint);
+}
+
 
 static inline luisa::compute::Callable bit_log2 = [](luisa::compute::UInt x)
 { return 31 - luisa::compute::clz(x); };

@@ -68,9 +68,52 @@ class DeviceScan : public LuisaModule
         m_created                  = true;
     }
 
+    // ============================================================
+    // GetTempStorageBytes: compute required temp buffer size (in bytes)
+    // ============================================================
+
+    /// Temp storage bytes for ExclusiveScan / InclusiveScan / ExclusiveSum / InclusiveSum
+    template <typename Type4Byte>
+    static size_t GetTempStorageBytes(size_t num_items)
+    {
+        int num_tiles = imax(1, (int)ceil((float)num_items / (ITEMS_PER_THREAD * BLOCK_SIZE)));
+        size_t tile_count = details::WARP_SIZE + num_tiles;
+
+        size_t bytes = 0;
+        bytes += tile_count * sizeof(uint);               // tile_status
+        bytes  = align_up_uint(bytes, alignof(Type4Byte));
+        bytes += tile_count * sizeof(Type4Byte);          // tile_partial
+        bytes  = align_up_uint(bytes, alignof(Type4Byte));
+        bytes += tile_count * sizeof(Type4Byte);          // tile_inclusive
+        return bytes;
+    }
+
+    /// Temp storage bytes for ExclusiveScanByKey / InclusiveScanByKey
+    template <typename KeyType, typename ValueType>
+    static size_t GetScanByKeyTempStorageBytes(size_t num_items)
+    {
+        using FlagValuePairT = KeyValuePair<int, ValueType>;
+        int num_tiles = imax(1, (int)ceil((float)num_items / (ITEMS_PER_THREAD * BLOCK_SIZE)));
+        size_t tile_count = details::WARP_SIZE + num_tiles;
+
+        size_t bytes = 0;
+        bytes += tile_count * sizeof(uint);                  // tile_status
+        bytes  = align_up_uint(bytes, alignof(FlagValuePairT));
+        bytes += tile_count * sizeof(FlagValuePairT);        // tile_partial
+        bytes  = align_up_uint(bytes, alignof(FlagValuePairT));
+        bytes += tile_count * sizeof(FlagValuePairT);        // tile_inclusive
+        bytes  = align_up_uint(bytes, alignof(KeyType));
+        bytes += num_tiles * sizeof(KeyType);                // d_prev_keys_in
+        return bytes;
+    }
+
+    // ============================================================
+    // Dispatch APIs (CUB-style: caller provides temp_storage)
+    // ============================================================
 
     template <NumericT Type4Byte, typename ScanOp>
     void ExclusiveScan(CommandList&          cmdlist,
+                       BufferView<uint>      temp_storage,
                        BufferView<Type4Byte> d_in,
                        BufferView<Type4Byte> d_out,
                        size_t                num_items,
@@ -78,16 +121,32 @@ class DeviceScan : public LuisaModule
                        Type4Byte             initial_value)
     {
         int  num_tiles   = imax(1, (int)ceil((float)num_items / (ITEMS_PER_THREAD * m_block_size)));
-        auto tile_status = m_device.create_buffer<uint>(details::WARP_SIZE + num_tiles);
-        auto tile_partial   = m_device.create_buffer<Type4Byte>(details::WARP_SIZE + num_tiles);
-        auto tile_inclusive = m_device.create_buffer<Type4Byte>(details::WARP_SIZE + num_tiles);
+        size_t tile_count = details::WARP_SIZE + num_tiles;
+
+        size_t offset_bytes = 0;
+        // tile_status
+        auto tile_status = temp_storage.subview(offset_bytes / sizeof(uint), tile_count);
+        offset_bytes += tile_count * sizeof(uint);
+        offset_bytes = align_up_uint(offset_bytes, alignof(Type4Byte));
+
+        // tile_partial
+        size_t partial_uint_count = tile_count * sizeof(Type4Byte) / sizeof(uint);
+        auto tile_partial = temp_storage.subview(offset_bytes / sizeof(uint), partial_uint_count).template as<Type4Byte>();
+        offset_bytes += partial_uint_count * sizeof(uint);
+        offset_bytes = align_up_uint(offset_bytes, alignof(Type4Byte));
+
+        // tile_inclusive
+        size_t inclusive_uint_count = tile_count * sizeof(Type4Byte) / sizeof(uint);
+        auto tile_inclusive = temp_storage.subview(offset_bytes / sizeof(uint), inclusive_uint_count).template as<Type4Byte>();
+
         lcpp_check(scan_array<Type4Byte>(
-            cmdlist, tile_status.view(), tile_partial.view(), tile_inclusive.view(), d_in, d_out, num_items, scan_op, initial_value, false),
+            cmdlist, tile_status, tile_partial, tile_inclusive, d_in, d_out, num_items, scan_op, initial_value, false),
             cmdlist, debug_stream());
     }
 
     template <NumericT Type4Byte, typename ScanOp>
     void InclusiveScan(CommandList&          cmdlist,
+                       BufferView<uint>      temp_storage,
                        BufferView<Type4Byte> d_in,
                        BufferView<Type4Byte> d_out,
                        size_t                num_items,
@@ -95,19 +154,35 @@ class DeviceScan : public LuisaModule
                        Type4Byte             initial_value)
     {
         int  num_tiles   = imax(1, (int)ceil((float)num_items / (ITEMS_PER_THREAD * m_block_size)));
-        auto tile_status = m_device.create_buffer<uint>(details::WARP_SIZE + num_tiles);
-        auto tile_partial   = m_device.create_buffer<Type4Byte>(details::WARP_SIZE + num_tiles);
-        auto tile_inclusive = m_device.create_buffer<Type4Byte>(details::WARP_SIZE + num_tiles);
+        size_t tile_count = details::WARP_SIZE + num_tiles;
+
+        size_t offset_bytes = 0;
+        // tile_status
+        auto tile_status = temp_storage.subview(offset_bytes / sizeof(uint), tile_count);
+        offset_bytes += tile_count * sizeof(uint);
+        offset_bytes = align_up_uint(offset_bytes, alignof(Type4Byte));
+
+        // tile_partial
+        size_t partial_uint_count = tile_count * sizeof(Type4Byte) / sizeof(uint);
+        auto tile_partial = temp_storage.subview(offset_bytes / sizeof(uint), partial_uint_count).template as<Type4Byte>();
+        offset_bytes += partial_uint_count * sizeof(uint);
+        offset_bytes = align_up_uint(offset_bytes, alignof(Type4Byte));
+
+        // tile_inclusive
+        size_t inclusive_uint_count = tile_count * sizeof(Type4Byte) / sizeof(uint);
+        auto tile_inclusive = temp_storage.subview(offset_bytes / sizeof(uint), inclusive_uint_count).template as<Type4Byte>();
+
         lcpp_check(scan_array<Type4Byte>(
-            cmdlist, tile_status.view(), tile_partial.view(), tile_inclusive.view(), d_in, d_out, num_items, scan_op, initial_value, true),
+            cmdlist, tile_status, tile_partial, tile_inclusive, d_in, d_out, num_items, scan_op, initial_value, true),
             cmdlist, debug_stream());
     }
 
     template <NumericT Type4Byte>
-    void ExclusiveSum(CommandList& cmdlist, BufferView<Type4Byte> d_in, BufferView<Type4Byte> d_out, size_t num_items)
+    void ExclusiveSum(CommandList& cmdlist, BufferView<uint> temp_storage, BufferView<Type4Byte> d_in, BufferView<Type4Byte> d_out, size_t num_items)
     {
         ExclusiveScan(
             cmdlist,
+            temp_storage,
             d_in,
             d_out,
             num_items,
@@ -116,10 +191,11 @@ class DeviceScan : public LuisaModule
     }
 
     template <NumericT Type4Byte>
-    void InclusiveSum(CommandList& cmdlist, BufferView<Type4Byte> d_in, BufferView<Type4Byte> d_out, size_t num_items)
+    void InclusiveSum(CommandList& cmdlist, BufferView<uint> temp_storage, BufferView<Type4Byte> d_in, BufferView<Type4Byte> d_out, size_t num_items)
     {
         InclusiveScan(
             cmdlist,
+            temp_storage,
             d_in,
             d_out,
             num_items,
@@ -129,6 +205,7 @@ class DeviceScan : public LuisaModule
 
     template <NumericT KeyType, NumericT ValueType, typename ScanOp>
     void ExclusiveScanByKey(CommandList&          cmdlist,
+                            BufferView<uint>      temp_storage,
                             BufferView<KeyType>   d_keys_in,
                             BufferView<ValueType> d_values_in,
                             BufferView<ValueType> d_values_out,
@@ -136,19 +213,38 @@ class DeviceScan : public LuisaModule
                             size_t                num_items,
                             ValueType             initial_value)
     {
-        int num_tiles = imax(1, (int)ceil((float)num_items / (ITEMS_PER_THREAD * m_block_size)));
         using FlagValuePairT = KeyValuePair<int, ValueType>;
-        auto tile_status     = m_device.create_buffer<uint>(details::WARP_SIZE + num_tiles);
-        auto tile_partial = m_device.create_buffer<FlagValuePairT>(details::WARP_SIZE + num_tiles);
-        auto tile_inclusive = m_device.create_buffer<FlagValuePairT>(details::WARP_SIZE + num_tiles);
-        Buffer<KeyType> d_prev_keys_in = m_device.create_buffer<KeyType>(num_tiles);
+        int num_tiles = imax(1, (int)ceil((float)num_items / (ITEMS_PER_THREAD * m_block_size)));
+        size_t tile_count = details::WARP_SIZE + num_tiles;
+
+        size_t offset_bytes = 0;
+        // tile_status
+        auto tile_status = temp_storage.subview(offset_bytes / sizeof(uint), tile_count);
+        offset_bytes += tile_count * sizeof(uint);
+        offset_bytes = align_up_uint(offset_bytes, alignof(FlagValuePairT));
+
+        // tile_partial
+        size_t partial_uint_count = tile_count * sizeof(FlagValuePairT) / sizeof(uint);
+        auto tile_partial = temp_storage.subview(offset_bytes / sizeof(uint), partial_uint_count).template as<FlagValuePairT>();
+        offset_bytes += partial_uint_count * sizeof(uint);
+        offset_bytes = align_up_uint(offset_bytes, alignof(FlagValuePairT));
+
+        // tile_inclusive
+        size_t inclusive_uint_count = tile_count * sizeof(FlagValuePairT) / sizeof(uint);
+        auto tile_inclusive = temp_storage.subview(offset_bytes / sizeof(uint), inclusive_uint_count).template as<FlagValuePairT>();
+        offset_bytes += inclusive_uint_count * sizeof(uint);
+        offset_bytes = align_up_uint(offset_bytes, alignof(KeyType));
+
+        // d_prev_keys_in
+        size_t prev_keys_uint_count = num_tiles * sizeof(KeyType) / sizeof(uint);
+        auto d_prev_keys_in = temp_storage.subview(offset_bytes / sizeof(uint), prev_keys_uint_count).template as<KeyType>();
 
         lcpp_check(scan_by_key_array<KeyType, ValueType>(cmdlist,
-                                              tile_status.view(),
-                                              tile_partial.view(),
-                                              tile_inclusive.view(),
+                                              tile_status,
+                                              tile_partial,
+                                              tile_inclusive,
                                               d_keys_in,
-                                              d_prev_keys_in.view(),
+                                              d_prev_keys_in,
                                               d_values_in,
                                               d_values_out,
                                               num_items,
@@ -160,6 +256,7 @@ class DeviceScan : public LuisaModule
 
     template <NumericT KeyType, NumericT ValueType, typename ScanOp>
     void InclusiveScanByKey(CommandList&          cmdlist,
+                            BufferView<uint>      temp_storage,
                             BufferView<KeyType>   d_keys_in,
                             BufferView<ValueType> d_values_in,
                             BufferView<ValueType> d_values_out,
@@ -167,20 +264,38 @@ class DeviceScan : public LuisaModule
                             size_t                num_items,
                             ValueType             initial_value)
     {
-        int num_tiles = imax(1, (int)ceil((float)num_items / (ITEMS_PER_THREAD * m_block_size)));
         using FlagValuePairT = KeyValuePair<int, ValueType>;
+        int num_tiles = imax(1, (int)ceil((float)num_items / (ITEMS_PER_THREAD * m_block_size)));
+        size_t tile_count = details::WARP_SIZE + num_tiles;
 
-        auto tile_status     = m_device.create_buffer<uint>(details::WARP_SIZE + num_tiles);
-        auto tile_partial = m_device.create_buffer<FlagValuePairT>(details::WARP_SIZE + num_tiles);
-        auto tile_inclusive = m_device.create_buffer<FlagValuePairT>(details::WARP_SIZE + num_tiles);
-        Buffer<KeyType> d_prev_keys_in = m_device.create_buffer<KeyType>(num_tiles);
+        size_t offset_bytes = 0;
+        // tile_status
+        auto tile_status = temp_storage.subview(offset_bytes / sizeof(uint), tile_count);
+        offset_bytes += tile_count * sizeof(uint);
+        offset_bytes = align_up_uint(offset_bytes, alignof(FlagValuePairT));
+
+        // tile_partial
+        size_t partial_uint_count = tile_count * sizeof(FlagValuePairT) / sizeof(uint);
+        auto tile_partial = temp_storage.subview(offset_bytes / sizeof(uint), partial_uint_count).template as<FlagValuePairT>();
+        offset_bytes += partial_uint_count * sizeof(uint);
+        offset_bytes = align_up_uint(offset_bytes, alignof(FlagValuePairT));
+
+        // tile_inclusive
+        size_t inclusive_uint_count = tile_count * sizeof(FlagValuePairT) / sizeof(uint);
+        auto tile_inclusive = temp_storage.subview(offset_bytes / sizeof(uint), inclusive_uint_count).template as<FlagValuePairT>();
+        offset_bytes += inclusive_uint_count * sizeof(uint);
+        offset_bytes = align_up_uint(offset_bytes, alignof(KeyType));
+
+        // d_prev_keys_in
+        size_t prev_keys_uint_count = num_tiles * sizeof(KeyType) / sizeof(uint);
+        auto d_prev_keys_in = temp_storage.subview(offset_bytes / sizeof(uint), prev_keys_uint_count).template as<KeyType>();
 
         lcpp_check(scan_by_key_array<KeyType, ValueType>(cmdlist,
-                                              tile_status.view(),
-                                              tile_partial.view(),
-                                              tile_inclusive.view(),
+                                              tile_status,
+                                              tile_partial,
+                                              tile_inclusive,
                                               d_keys_in,
-                                              d_prev_keys_in.view(),
+                                              d_prev_keys_in,
                                               d_values_in,
                                               d_values_out,
                                               num_items,
@@ -193,6 +308,7 @@ class DeviceScan : public LuisaModule
 
     template <NumericT Type4Byte>
     void ExclusiveSumByKey(CommandList&          cmdlist,
+                           BufferView<uint>      temp_storage,
                            BufferView<Type4Byte> d_keys_in,
                            BufferView<Type4Byte> d_values_in,
                            BufferView<Type4Byte> d_values_out,
@@ -200,6 +316,7 @@ class DeviceScan : public LuisaModule
     {
         ExclusiveScanByKey(
             cmdlist,
+            temp_storage,
             d_keys_in,
             d_values_in,
             d_values_out,
@@ -210,6 +327,7 @@ class DeviceScan : public LuisaModule
 
     template <NumericT Type4Byte>
     void InclusiveSumByKey(CommandList&          cmdlist,
+                           BufferView<uint>      temp_storage,
                            BufferView<Type4Byte> d_keys_in,
                            BufferView<Type4Byte> d_values_in,
                            BufferView<Type4Byte> d_values_out,
@@ -217,6 +335,7 @@ class DeviceScan : public LuisaModule
     {
         InclusiveScanByKey(
             cmdlist,
+            temp_storage,
             d_keys_in,
             d_values_in,
             d_values_out,

@@ -60,7 +60,8 @@ int main(int argc, char* argv[])
     constexpr int32_t WARP_NUMS        = 32;
     constexpr int32_t MAX_NUM_LOGIC    = 24;
 
-    DeviceScan<BLOCK_SIZE, WARP_NUMS, ITEMS_PER_THREAD> scanner;
+    using ScannerT = DeviceScan<BLOCK_SIZE, WARP_NUMS, ITEMS_PER_THREAD>;
+    ScannerT scanner;
     scanner.create(device, &stream);
 
     "exclusive_scan"_test = [&]
@@ -73,15 +74,21 @@ int main(int argc, char* argv[])
             auto                exclusive_out_buffer = device.create_buffer<uint>(array_size);
             stream << in_buffer.copy_from(input_data.data()) << synchronize();
 
+            // CUB-style: get temp storage size
+            size_t temp_bytes = ScannerT::GetTempStorageBytes<uint>(array_size);
+            auto temp_buffer = device.create_buffer<uint>(bytes_to_uint_count(temp_bytes));
+
             scanner.ExclusiveSum(
-                cmdlist, in_buffer.view(), exclusive_out_buffer.view(), in_buffer.size());
+                cmdlist, temp_buffer.view(), in_buffer.view(), exclusive_out_buffer.view(), in_buffer.size());
             stream << cmdlist.commit() << synchronize();
             luisa::vector<uint> exclusive_result(array_size);
             stream << exclusive_out_buffer.copy_to(exclusive_result.data()) << synchronize();
 
             auto inclusive_out_buffer = device.create_buffer<uint>(array_size);
+
+            // Reuse same temp_buffer for inclusive scan (same size requirement)
             scanner.InclusiveSum(
-                cmdlist, in_buffer.view(), inclusive_out_buffer.view(), in_buffer.size());
+                cmdlist, temp_buffer.view(), in_buffer.view(), inclusive_out_buffer.view(), in_buffer.size());
             stream << cmdlist.commit() << synchronize();
             luisa::vector<uint> inclusive_result(array_size);
             stream << inclusive_out_buffer.copy_to(inclusive_result.data()) << synchronize();
@@ -125,7 +132,13 @@ int main(int argc, char* argv[])
             stream << value_buffer.copy_from(input_data.data()) << synchronize();
 
             auto value_out_buffer = device.create_buffer<int32>(array_size);
+
+            // CUB-style: get temp storage size for ScanByKey
+            size_t temp_bytes = ScannerT::GetScanByKeyTempStorageBytes<int32, int32>(array_size);
+            auto temp_buffer = device.create_buffer<uint>(bytes_to_uint_count(temp_bytes));
+
             scanner.ExclusiveSumByKey(cmdlist,
+                                      temp_buffer.view(),
                                       key_buffer.view(),
                                       value_buffer.view(),
                                       value_out_buffer.view(),
