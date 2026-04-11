@@ -49,6 +49,23 @@ inline void lazy_compile(luisa::compute::Device&                device,
     }
 }
 
+// lcpp_check: inline function template replacing the old LCPP_CHECK macro.
+// Avoids the C preprocessor comma-in-template-args pitfall entirely.
+// In debug builds: commits the cmdlist, synchronizes the stream, then asserts result == 0.
+// In release builds: the stream/cmdlist parameters are unused and the whole call is a no-op.
+#ifndef NDEBUG
+inline void lcpp_check(int result, luisa::compute::CommandList& cmdlist, luisa::compute::Stream* stream) noexcept
+{
+    if(stream)
+    {
+        *stream << cmdlist.commit() << luisa::compute::synchronize();
+    }
+    LUISA_ASSERT(result == 0, "lcpp_check failed with result {}", result);
+}
+#else
+inline void lcpp_check(int, luisa::compute::CommandList&, luisa::compute::Stream*) noexcept {}
+#endif
+
 class LuisaModule : public vstd::IOperatorNewBase
 {
   protected:

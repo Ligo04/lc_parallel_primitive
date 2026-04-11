@@ -52,8 +52,7 @@ int main(int argc, char* argv[])
 
     constexpr int32_t array_size = 1 << 12;
     DeviceReduce<>    reducer;
-    reducer.create(device);
-
+    reducer.create(device, &stream);
     luisa::vector<int32> input_data(array_size);
     for(int i = 0; i < array_size; i++)
     {
@@ -75,15 +74,13 @@ int main(int argc, char* argv[])
             std::vector<Type4Byte> host_input(num_items, 1);
             stream << d_input.copy_from(host_input.data()) << synchronize();
             CommandList cmdlist;
-            reducer.Sum(cmdlist, stream, d_input.view(), d_output.view(), num_items);
+            reducer.Sum(cmdlist, d_input.view(), d_output.view(), num_items);
             stream << cmdlist.commit() << synchronize();
             std::vector<Type4Byte> host_output(1);
             stream << d_output.copy_to(host_output.data()) << synchronize();
 
             LUISA_INFO("Reduce: {}", host_output[0]);
             expect(host_output[0] == num_items);
-            d_input.release();
-            d_output.release();
         }
     };
 
@@ -101,7 +98,8 @@ int main(int argc, char* argv[])
 
         CommandList cmdlist;
         reducer.TransformReduce(
-            cmdlist, stream, in_buffer.view(), out_buffer.view(), in_buffer.size(), max_reduce_op, square_op, 0);
+            cmdlist, in_buffer.view(), out_buffer.view(), in_buffer.size(), max_reduce_op, square_op, 0);
+        stream << cmdlist.commit() << synchronize();
         stream << out_buffer.copy_to(result.data()) << synchronize();  // 输出结果
 
         LUISA_INFO("Reduce(square) (0,1,4,...+{}): {}", (array_size - 1), (array_size - 1) * (array_size - 1));
@@ -116,7 +114,8 @@ int main(int argc, char* argv[])
         auto                 out_buffer = device.create_buffer<int32>(1);
         luisa::vector<int32> result(1);
         CommandList          cmdlist;
-        reducer.Min(cmdlist, stream, in_buffer.view(), out_buffer.view(), in_buffer.size());
+        reducer.Min(cmdlist, in_buffer.view(), out_buffer.view(), in_buffer.size());
+        stream << cmdlist.commit() << synchronize();
         stream << out_buffer.copy_to(result.data()) << synchronize();  // 输出结果
         LUISA_INFO("Result Min(0-{}): {}",
                    (array_size - 1),
@@ -134,7 +133,8 @@ int main(int argc, char* argv[])
 
         stream << in_buffer.copy_from(input_data.data()) << synchronize();
         CommandList cmdlist;
-        reducer.Max(cmdlist, stream, in_buffer.view(), out_buffer.view(), in_buffer.size());
+        reducer.Max(cmdlist, in_buffer.view(), out_buffer.view(), in_buffer.size());
+        stream << cmdlist.commit() << synchronize();
         stream << out_buffer.copy_to(result.data()) << synchronize();  // 输出结果
         LUISA_INFO("Result Max(0-1023): {}", *std::max_element(input_data.begin(), input_data.end()));
         LUISA_INFO("Reduce Max: {}", result[0]);
@@ -153,8 +153,8 @@ int main(int argc, char* argv[])
         luisa::vector<luisa::uint> index_result(1);
         CommandList                cmdlist;
         reducer.ArgMin(
-            cmdlist, stream, in_buffer.view(), out_buffer.view(), index_out_buffer.view(), in_buffer.size());
-
+            cmdlist, in_buffer.view(), out_buffer.view(), index_out_buffer.view(), in_buffer.size());
+        stream << cmdlist.commit() << synchronize();
         stream << out_buffer.copy_to(result.data()) << synchronize();              // 输出结果
         stream << index_out_buffer.copy_to(index_result.data()) << synchronize();  // 输出结果
         LUISA_INFO("result index:{}, value: {}", index_result[0], result[0]);
@@ -178,8 +178,8 @@ int main(int argc, char* argv[])
 
         CommandList cmdlist;
         reducer.ArgMax(
-            cmdlist, stream, in_buffer.view(), out_buffer.view(), index_out_buffer.view(), in_buffer.size());
-
+            cmdlist, in_buffer.view(), out_buffer.view(), index_out_buffer.view(), in_buffer.size());
+        stream << cmdlist.commit() << synchronize();
         stream << out_buffer.copy_to(result.data()) << synchronize();
         stream << index_out_buffer.copy_to(index_result.data()) << synchronize();
 
@@ -218,7 +218,6 @@ int main(int argc, char* argv[])
         CommandList cmdlist;
         reducer.ReduceByKey(
             cmdlist,
-            stream,
             key_buffer.view(),
             value_buffer.view(),
             unique_keys_buffer.view(),
@@ -226,7 +225,7 @@ int main(int argc, char* argv[])
             num_runs_buffer.view(),
             [](const Var<int32>& a, const Var<int32>& b) { return a + b; },
             key_buffer.size());
-
+        stream << cmdlist.commit() << synchronize();
         luisa::vector<int32>       unique_keys(segments);
         luisa::vector<int32>       aggregates(segments);
         luisa::vector<luisa::uint> num_runs(1);

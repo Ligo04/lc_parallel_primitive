@@ -57,7 +57,7 @@ int main(int argc, char* argv[])
     CommandList cmdlist;
 
     DeviceSegmentReduce<> reducer;
-    reducer.create(device);
+    reducer.create(device, &stream);
 
     "segment_reduce"_test = [&]
     {
@@ -93,12 +93,12 @@ int main(int argc, char* argv[])
         stream << end_offsets.copy_from(end_offsets_array.data()) << synchronize();
 
         reducer.Sum(cmdlist,
-                    stream,
                     in_buffer.view(),
                     out_buffer.view(),
                     num_segments,
                     begin_offsets.view(),
                     end_offsets.view());
+        stream << cmdlist.commit() << synchronize();
 
         luisa::vector<int32> result(num_segments);
         stream << out_buffer.copy_to(result.data()) << synchronize();
@@ -146,7 +146,8 @@ int main(int argc, char* argv[])
         }
         stream << in_buffer.copy_from(input_data.data()) << synchronize();
 
-        reducer.Sum(cmdlist, stream, in_buffer.view(), out_buffer.view(), num_segments, items_per_segment);
+        reducer.Sum(cmdlist, in_buffer.view(), out_buffer.view(), num_segments, items_per_segment);
+        stream << cmdlist.commit() << synchronize();
 
         luisa::vector<int32> result(num_segments);
         stream << out_buffer.copy_to(result.data()) << synchronize();
@@ -205,13 +206,13 @@ int main(int argc, char* argv[])
         auto index_out_buffer = device.create_buffer<uint>(num_segments);
 
         reducer.ArgMax(cmdlist,
-                       stream,
                        in_buffer.view(),
                        out_buffer.view(),
                        index_out_buffer.view(),
                        num_segments,
                        begin_offsets.view(),
                        end_offsets.view());
+        stream << cmdlist.commit() << synchronize();
 
         luisa::vector<int32> result(num_segments);
         stream << out_buffer.copy_to(result.data()) << synchronize();
@@ -253,7 +254,8 @@ int main(int argc, char* argv[])
         std::shuffle(input_data.begin(), input_data.end(), rng);
         stream << in_buffer.copy_from(input_data.data()) << synchronize();
 
-        reducer.ArgMin(cmdlist, stream, in_buffer.view(), out_buffer.view(), index_out_buffer.view(), num_segments, items_per_segment);
+        reducer.ArgMin(cmdlist, in_buffer.view(), out_buffer.view(), index_out_buffer.view(), num_segments, items_per_segment);
+        stream << cmdlist.commit() << synchronize();
 
         luisa::vector<int32> result(num_segments);
         stream << out_buffer.copy_to(result.data()) << synchronize();

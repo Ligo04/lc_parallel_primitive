@@ -55,7 +55,7 @@ int main(int argc, char* argv[])
     constexpr int32_t WARP_NUMS        = 32;
 
     DeviceRadixSort<BLOCK_SIZE, WARP_NUMS, ITEMS_PER_THREAD> radixsorter;
-    radixsorter.create(device);
+    radixsorter.create(device, &stream);
 
     "radix sort key float"_test = [&]
     {
@@ -79,13 +79,11 @@ int main(int argc, char* argv[])
 
             auto output_key_buffer = device.create_buffer<radix_sort_type>(array_size);
             radixsorter.SortKeys<radix_sort_type>(
-                cmdlist, stream, input_key_buffer.view(), output_key_buffer.view(), input_key_buffer.size());
+                cmdlist, input_key_buffer.view(), output_key_buffer.view(), input_key_buffer.size());
+            stream << cmdlist.commit() << synchronize();
 
             luisa::vector<radix_sort_type> result(array_size);
             stream << output_key_buffer.copy_to(result.data()) << synchronize();
-
-            input_key_buffer.release();
-            output_key_buffer.release();
 
             // desc
             auto input_to_desc_key_buffer = device.create_buffer<radix_sort_type>(array_size);
@@ -93,15 +91,13 @@ int main(int argc, char* argv[])
 
             auto out_desc_key_buffer = device.create_buffer<radix_sort_type>(array_size);
             radixsorter.SortKeysDescending<radix_sort_type>(cmdlist,
-                                                            stream,
                                                             input_to_desc_key_buffer.view(),
                                                             out_desc_key_buffer.view(),
                                                             input_to_desc_key_buffer.size());
+            stream << cmdlist.commit() << synchronize();
 
             luisa::vector<radix_sort_type> desc_result(array_size);
             stream << out_desc_key_buffer.copy_to(desc_result.data()) << synchronize();
-            input_to_desc_key_buffer.release();
-            out_desc_key_buffer.release();
 
             std::sort(input_key.begin(), input_key.end());
             std::sort(input_to_desc_key.begin(), input_to_desc_key.end(), std::greater<radix_sort_type>());
@@ -116,7 +112,7 @@ int main(int argc, char* argv[])
     "radix sort key uint variant size"_test = [&]
     {
         DeviceRadixSort<> device_radix_sort;
-        device_radix_sort.create(device);
+        device_radix_sort.create(device, &stream);
         for(uint loop = 0; loop < 24; ++loop)
         {
             uint                num_items  = 1 << loop;
@@ -129,7 +125,7 @@ int main(int argc, char* argv[])
             }
             stream << d_keys_in.copy_from(host_keys.data()) << synchronize();
             CommandList cmdlist;
-            device_radix_sort.SortKeys(cmdlist, stream, d_keys_in.view(), d_keys_out.view(), num_items);
+            device_radix_sort.SortKeys(cmdlist, d_keys_in.view(), d_keys_out.view(), num_items);
             stream << cmdlist.commit() << synchronize();
             luisa::vector<uint> host_keys_out(num_items);
             stream << d_keys_out.copy_to(host_keys_out.data()) << synchronize();
@@ -182,12 +178,12 @@ int main(int argc, char* argv[])
         auto key_out_buffer   = device.create_buffer<radix_key_type>(array_size);
         auto value_out_buffer = device.create_buffer<radix_value_type>(array_size);
         radixsorter.SortPairs<radix_key_type, radix_value_type>(cmdlist,
-                                                                stream,
                                                                 key_buffer.view(),
                                                                 key_out_buffer.view(),
                                                                 value_buffer.view(),
                                                                 value_out_buffer.view(),
                                                                 key_buffer.size());
+        stream << cmdlist.commit() << synchronize();
 
         // sec
         luisa::vector<radix_key_type> result(array_size);
@@ -204,12 +200,12 @@ int main(int argc, char* argv[])
         stream << dec_value_buffer.copy_from(input_dec_value.data()) << synchronize();
         auto dec_value_out_buffer = device.create_buffer<radix_value_type>(array_size);
         radixsorter.SortPairsDescending<radix_key_type, radix_value_type>(cmdlist,
-                                                                          stream,
                                                                           dec_key_in_buffer.view(),
                                                                           dec_key_out_buffer.view(),
                                                                           dec_value_buffer.view(),
                                                                           dec_value_out_buffer.view(),
                                                                           dec_key_in_buffer.size());
+        stream << cmdlist.commit() << synchronize();
 
         luisa::vector<radix_key_type> desc_result(array_size);
         stream << dec_key_out_buffer.copy_to(desc_result.data()) << synchronize();

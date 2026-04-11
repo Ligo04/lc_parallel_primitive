@@ -61,7 +61,7 @@ int main(int argc, char* argv[])
     constexpr int32_t MAX_NUM_LOGIC    = 24;
 
     DeviceScan<BLOCK_SIZE, WARP_NUMS, ITEMS_PER_THREAD> scanner;
-    scanner.create(device);
+    scanner.create(device, &stream);
 
     "exclusive_scan"_test = [&]
     {
@@ -74,13 +74,15 @@ int main(int argc, char* argv[])
             stream << in_buffer.copy_from(input_data.data()) << synchronize();
 
             scanner.ExclusiveSum(
-                cmdlist, stream, in_buffer.view(), exclusive_out_buffer.view(), in_buffer.size());
+                cmdlist, in_buffer.view(), exclusive_out_buffer.view(), in_buffer.size());
+            stream << cmdlist.commit() << synchronize();
             luisa::vector<uint> exclusive_result(array_size);
             stream << exclusive_out_buffer.copy_to(exclusive_result.data()) << synchronize();
 
             auto inclusive_out_buffer = device.create_buffer<uint>(array_size);
             scanner.InclusiveSum(
-                cmdlist, stream, in_buffer.view(), inclusive_out_buffer.view(), in_buffer.size());
+                cmdlist, in_buffer.view(), inclusive_out_buffer.view(), in_buffer.size());
+            stream << cmdlist.commit() << synchronize();
             luisa::vector<uint> inclusive_result(array_size);
             stream << inclusive_out_buffer.copy_to(inclusive_result.data()) << synchronize();
 
@@ -124,11 +126,11 @@ int main(int argc, char* argv[])
 
             auto value_out_buffer = device.create_buffer<int32>(array_size);
             scanner.ExclusiveSumByKey(cmdlist,
-                                      stream,
                                       key_buffer.view(),
                                       value_buffer.view(),
                                       value_out_buffer.view(),
                                       key_buffer.size());
+            stream << cmdlist.commit() << synchronize();
 
             luisa::vector<int32> result(array_size);
             stream << value_out_buffer.copy_to(result.data()) << synchronize();
@@ -145,11 +147,6 @@ int main(int argc, char* argv[])
                                     0);
                 for(auto j = i * items_per_segment; j < (i + 1) * items_per_segment && j < array_size; j++)
                 {
-                    // LUISA_INFO("index:{} Key: {}, Expected Aggregate: {}, result:{}",
-                    //            j,
-                    //            i,
-                    //            expect_segment[j - i * items_per_segment],
-                    //            result[j]);
                     expect(expect_segment[j - i * items_per_segment] == result[j]);
                 }
             }

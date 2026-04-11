@@ -25,3 +25,4 @@ vsxmake*/
 .xmake/
 .idea/
 LuisaCompute/
+.cache/
