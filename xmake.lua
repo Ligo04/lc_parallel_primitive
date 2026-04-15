@@ -11,7 +11,7 @@ if has_config('lc_use_xrepo') then
     add_requires("luisa-compute", {configs = {cuda = true}})
 else
     -- Change LCPP_LC_DIR for submod path
-    LCPP_LC_DIR = '../LuisaCompute'
+    LCPP_LC_DIR = 'LuisaCompute'
     local lc_lcpp_options = {
         lc_enable_xir = true,
         lc_enable_tests = false,
