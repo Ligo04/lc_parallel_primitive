@@ -225,12 +225,12 @@ class DeviceRadixSort : public LuisaModule
         if(!is_overwrite_okay && num_passes > 1)
         {
             offset_bytes = align_up_uint(offset_bytes, alignof(KeyType));
-            size_t keys_uint_count = (size_t)num_items * sizeof(KeyType) / sizeof(uint);
+            size_t keys_uint_count = bytes_to_uint_count((size_t)num_items * sizeof(KeyType));
             d_keys_tmp2_view = temp_storage.subview(offset_bytes / sizeof(uint), keys_uint_count).template as<KeyType>();
             offset_bytes += keys_uint_count * sizeof(uint);
 
             offset_bytes = align_up_uint(offset_bytes, alignof(ValueType));
-            size_t values_uint_count = (size_t)num_items * sizeof(ValueType) / sizeof(uint);
+            size_t values_uint_count = bytes_to_uint_count((size_t)num_items * sizeof(ValueType));
             d_values_tmp2_view = temp_storage.subview(offset_bytes / sizeof(uint), values_uint_count).template as<ValueType>();
             offset_bytes += values_uint_count * sizeof(uint);
         }

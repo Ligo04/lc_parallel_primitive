@@ -286,8 +286,12 @@ class DeviceReduce : public LuisaModule
                      size_t                num_elements)
     {
         using FlagValuePairT = KeyValuePair<int, ValueType>;
-        luisa::vector<luisa::uint> zero_data(1, 0);
-        cmdlist << g_num_runs_out.copy_from(zero_data.data());
+        auto ptr = luisa::allocate_with_allocator<luisa::uint>(0); // retain until the cmdlist commit
+        cmdlist << g_num_runs_out.copy_from(luisa::span<luisa::uint>({ptr, 1}));
+        cmdlist.add_dtor_callback([ptr] {
+            luisa::deallocate_with_allocator(ptr);
+        });
+        
         int num_tiles = imax(1, (int)ceil((float)num_elements / (ITEMS_PER_THREAD * m_block_size)));
         size_t tile_count = details::WARP_SIZE + num_tiles;
 

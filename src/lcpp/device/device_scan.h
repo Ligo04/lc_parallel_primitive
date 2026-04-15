@@ -236,7 +236,7 @@ class DeviceScan : public LuisaModule
         offset_bytes = align_up_uint(offset_bytes, alignof(KeyType));
 
         // d_prev_keys_in
-        size_t prev_keys_uint_count = num_tiles * sizeof(KeyType) / sizeof(uint);
+        size_t prev_keys_uint_count = bytes_to_uint_count(num_tiles * sizeof(KeyType));
         auto d_prev_keys_in = temp_storage.subview(offset_bytes / sizeof(uint), prev_keys_uint_count).template as<KeyType>();
 
         lcpp_check(scan_by_key_array<KeyType, ValueType>(cmdlist,
