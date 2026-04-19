@@ -92,7 +92,12 @@ int main(int argc, char* argv[])
         stream << begin_offsets.copy_from(begin_offsets_array.data()) << synchronize();
         stream << end_offsets.copy_from(end_offsets_array.data()) << synchronize();
 
+        // CUB-style: get temp storage size
+        size_t temp_bytes = DeviceSegmentReduce<>::GetTempStorageBytes<int32>(array_size);
+        auto temp_buffer  = device.create_buffer<uint>(std::max<size_t>(1, bytes_to_uint_count(temp_bytes)));
+
         reducer.Sum(cmdlist,
+                    temp_buffer.view(),
                     in_buffer.view(),
                     out_buffer.view(),
                     num_segments,
@@ -146,7 +151,11 @@ int main(int argc, char* argv[])
         }
         stream << in_buffer.copy_from(input_data.data()) << synchronize();
 
-        reducer.Sum(cmdlist, in_buffer.view(), out_buffer.view(), num_segments, items_per_segment);
+        // CUB-style: get temp storage size
+        size_t temp_bytes = DeviceSegmentReduce<>::GetTempStorageBytes<int32>(fixed_array);
+        auto temp_buffer  = device.create_buffer<uint>(std::max<size_t>(1, bytes_to_uint_count(temp_bytes)));
+
+        reducer.Sum(cmdlist, temp_buffer.view(), in_buffer.view(), out_buffer.view(), num_segments, items_per_segment);
         stream << cmdlist.commit() << synchronize();
 
         luisa::vector<int32> result(num_segments);
@@ -205,7 +214,12 @@ int main(int argc, char* argv[])
         auto out_buffer       = device.create_buffer<int>(num_segments);
         auto index_out_buffer = device.create_buffer<uint>(num_segments);
 
+        // CUB-style: get temp storage size for ArgMax
+        size_t temp_bytes = DeviceSegmentReduce<>::GetArgTempStorageBytes<int32>(array_size, num_segments);
+        auto temp_buffer  = device.create_buffer<uint>(bytes_to_uint_count(temp_bytes));
+
         reducer.ArgMax(cmdlist,
+                       temp_buffer.view(),
                        in_buffer.view(),
                        out_buffer.view(),
                        index_out_buffer.view(),
@@ -254,7 +268,11 @@ int main(int argc, char* argv[])
         std::shuffle(input_data.begin(), input_data.end(), rng);
         stream << in_buffer.copy_from(input_data.data()) << synchronize();
 
-        reducer.ArgMin(cmdlist, in_buffer.view(), out_buffer.view(), index_out_buffer.view(), num_segments, items_per_segment);
+        // CUB-style: get temp storage size for ArgMin
+        size_t temp_bytes = DeviceSegmentReduce<>::GetArgTempStorageBytes<int32>(fixed_array, num_segments);
+        auto temp_buffer  = device.create_buffer<uint>(bytes_to_uint_count(temp_bytes));
+
+        reducer.ArgMin(cmdlist, temp_buffer.view(), in_buffer.view(), out_buffer.view(), index_out_buffer.view(), num_segments, items_per_segment);
         stream << cmdlist.commit() << synchronize();
 
         luisa::vector<int32> result(num_segments);
