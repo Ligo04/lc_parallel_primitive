@@ -71,6 +71,73 @@ ctest
 ./tests/device_scan_test
 ```
 
+## Benchmarking, diagnostics and the vk-CUDA interop path
+
+`tests/run_regression.sh` is replaced by `scripts/run_regression.sh` (legacy
+cuda/dx/vk matrix + `LCPP_INTEROP` modes; see `--help` inside the script for
+`--legacy-only` / `--interop-only` / `--policy-only`).
+
+`lcpp_cub_bench` measures `DeviceReduce` / `DeviceScan` / `DeviceRadixSort`
+against a same-run CUB baseline on the same GPU and prints CSV rows
+(`operation,items,lcpp_median_ms,lcpp_min_ms,lcpp_max_ms,cub_*,lcpp_over_cub`).
+Run `lcpp_cub_bench --help` for the full knob list; the two that matter when
+comparing numbers:
+
+- `LCPP_BENCH_BATCH=N` — number of op invocations, each in its own
+  `CommandList` and commit, bracketed by **one** `synchronize()` pair; the
+  reported time is the wall time divided by `N`. `N=1` exposes the raw per-op
+  host floor (~120–150 us of vk submit + completion per op); `N>=100`
+  amortizes it and exposes GPU throughput. **Throughput tables must be taken
+  at `N>=100`** — a batch-1 "vk 0.15 ms vs cuda 0.02 ms" row is the host floor,
+  not a codegen gap.
+- `LCPP_INTEROP` — vk only. `1`/`all` (all modules), `auto` (the measured
+  per-op recommendation: reduce/segment/radix on the interop path, scan on the
+  DSL path), `a,b,c` (explicit list), `0`/unset (pure-vulkan DSL everywhere).
+  See `src/lcpp/runtime/interop_dispatch.h` for the contract, and
+  `.kimix_cache/epoch_C_report.md` for the measurements behind `auto`.
+
+`LCPP_BENCH_POLL=1` observes completion by polling a stream event instead of
+`synchronize()`; `LCPP_BENCH_INQUEUE_LIMIT=0` turns the vk backend's depth-2
+in-flight throttle off (measured: a large regression on WDDM, see
+`--help`); `LCPP_BENCH_CL_OPS=K` measures K invocations recorded into **one**
+caller `CommandList` over K distinct buffer sets — the pattern that hides the
+per-op submit floor, because the vk command-reorder pass merges such
+non-aliasing iterations into barrier-free layers.
+
+`host_enqueue_probe` is the host-side cost microscope: recording cost per call
+(`[backend] [items] [reps] [calls_per_cl]`), `--commit` for the per-commit
+encode+submit cost, `--micro` for a host-only DSL-vs-interop encoder
+micro-benchmark, and a `KernelLauncher` ABI packing self-check that runs on
+every invocation.
+
+`policy_tune` is the compile-time policy sweep harness (Epoch D): the one-sweep
+radix tile and the reduce tile are template parameters, so the harness
+instantiates a fixed set of them and measures the requested subset on the DSL
+path and — on vk, when `LCPP_INTEROP` selects the module — on the interop path,
+interleaved round-robin, with a bit-exactness check against a host reference for
+every case.  `--help`-style usage is in the file header; rows are
+`PT,<op>,<tile>,<path>,<items>,<median_ms>,<min_ms>,<max_ms>,<rounds>,<ok>`.
+Knobs: `--op=radix|reduce|all`, `--items=N`, `--reps=R`, `--batch=B`
+(`B=1` floor, `B>=100` throughput), `--cl-ops=K` (K ops in one CommandList, the
+Epoch-C C3 pattern), `--tiles=`, `--reduce-tiles=`, `--dsl-max-items=`
+(the vk/dx HLSL codegen rejects > 32 KiB of static shared memory, which a
+keys-only radix one-sweep tile reaches above 31 items/thread).
+
+### Per-op policy revisited under the CUDA codegen (Epoch D)
+
+The interop path compiles kernels with the cuda backend, which is not bound by
+the 32 KiB HLSL/DX shared-memory floor that fixed the portable policy defaults.
+Epoch D re-measured the two candidates that floor had blocked
+(`.kimix_cache/epoch_D_report.md`): the radix one-sweep tile is already optimal
+at `256x16` for the cuda codegen (tile 32 is 0.5 % better but needs interop
+gating, tile 24/40 are worse), so it is unchanged; the plain narrow-integral
+reduce may use `256x16` on the interop path only
+(`REDUCE_INTEROP_ITEMS_PER_THREAD` in `src/lcpp/device/device_reduce.h`), worth
+1.5 % at 16M items on vk/`LCPP_INTEROP=auto` and a tie at 4M.  The gate excludes
+8-byte `IndexValuePairT` (ArgMin/ArgMax tie-breaking), floating-point reductions
+(non-associative) and transforming reductions (whose recursion structure would
+change), so every other backend and tile keeps its existing kernels and results.
+
 ## Quick Start
 
 ```cpp

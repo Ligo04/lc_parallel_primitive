@@ -75,6 +75,19 @@ struct OneSweepSmallKeyTunedPolicy
     static constexpr uint ONESWEEP_RADIX_BITS = 8;
 };
 
+/// Epoch-3.5: the tuned default tile (RADIX_ITEMS_PER_THREAD = 16) is sized for
+/// <=4-byte keys.  Wider key types scale the per-block shared footprint
+/// linearly, so the nominal items-per-thread is scaled down to keep the
+/// one-sweep block shared usage under the 32 KiB HLSL/DX codegen floor (and
+/// clear of the tighter smem budgets on other backends).  Callers that
+/// explicitly instantiate a policy are not affected -- this only adjusts the
+/// *effective* tile derived from a nominal template argument.
+template <size_t NominalItems, typename KeyType>
+static constexpr size_t radix_effective_items_v =
+    (sizeof(KeyType) <= 4u)
+        ? NominalItems
+        : ((NominalItems * 4u / sizeof(KeyType)) < 4u ? 4u : (NominalItems * 4u / sizeof(KeyType)));
+
 
 template <int BlockThreads, int PixelsPerThread, bool RleCompress, bool WorkStealing, int VecSize = 4>
 struct AgentHistogramPolicy

@@ -12,6 +12,8 @@
 #include <luisa/vstl/config.h>
 #include <algorithm>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <lcpp/parallel_primitive.h>
 #include <numeric>
 #include <random>
@@ -54,10 +56,25 @@ int main(int argc, char* argv[])
     Context     context{ctx_dir.empty() ? argv[0] : ctx_dir};
     Device      device = context.create_device(backend_name);
     Stream      stream = device.create_stream();
+    // Epoch B: opt-in vk-cuda interop fast path (env LCPP_INTEROP=1, vk only).
+    // The context must outlive every lcpp module that dispatches through it and
+    // is destroyed before the vk device it borrows (see interop_dispatch.h).
+    auto interop_requested = [] {
+        const char* env = std::getenv("LCPP_INTEROP");
+        return env != nullptr && env[0] != '\0' && env[0] != '0';
+    }();
+    luisa::unique_ptr<InteropContext> interop;
+    if (interop_requested && backend_name == "vk") {
+        interop = InteropContext::create(context, device);
+    }
     CommandList cmdlist;
 
     DeviceSegmentReduce<> reducer;
-    reducer.create(device, &stream);
+    reducer.create(device, &stream, interop.get());
+    if (interop_requested && backend_name == "vk" && interop_policy_selects("segment") && !reducer.interop_active()) {
+        std::fprintf(stderr, "[FAIL] LCPP_INTEROP selects segment but reducer stayed on the DSL path\n");
+        return 3;
+    }
 
     "segment_reduce"_test = [&]
     {

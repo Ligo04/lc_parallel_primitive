@@ -52,10 +52,16 @@ int main(int argc, char* argv[])
     CommandList cmdlist;
     Stream      stream = device.create_stream();
 
-    constexpr size_t WARP_SIZE  = 32;
-    constexpr size_t BLOCK_SIZE = 256;
-    constexpr size_t NUM_TILES  = 102400;
-    const size_t     num_blocks = ceil_div(NUM_TILES, BLOCK_SIZE);
+constexpr size_t WARP_SIZE  = 32;
+constexpr size_t BLOCK_SIZE = 256;
+constexpr size_t NUM_TILES  = 102400;
+// D3D12 caps 1D dispatch groups at 65535 per dimension, so the grid stays
+// well below the limit and each block grid-strides over its share of tiles.
+// Decoupled look-back is only safe when every block is co-resident (a tile
+// waits on predecessors owned by other blocks), so keep the grid small enough
+// to fit on one GPU simultaneously: 128 blocks x 256 threads = 32K threads.
+constexpr size_t NUM_GRID_BLOCKS = 128;
+const size_t num_blocks = ceil_div(NUM_TILES, BLOCK_SIZE);
 
     "decoupled_look_back_int"_test = [&]()
     {
@@ -95,8 +101,12 @@ int main(int argc, char* argv[])
 
                          auto temp_storage = luisa::compute::Shared<TilePrefixTempStorage<int>>(1);
 
-                         tile_prefix_op prefix(viewer, &temp_storage, scan_op);
-                         const auto     tile_idx        = prefix.GetTileIndex();
+                         $for (tile_idx,
+                               compute::block_x(),
+                               compute::UInt(NUM_TILES),
+                               compute::UInt(NUM_GRID_BLOCKS))
+                         {
+                         tile_prefix_op prefix(viewer, &temp_storage, scan_op, tile_idx);
                          compute::Int   block_aggregate = 1;
                          $if(tile_idx == 0)
                          {
@@ -122,6 +132,7 @@ int main(int argc, char* argv[])
                                  };
                              };
                          };
+                         };
                      });
 
         auto exclusive_buffer = device.create_buffer<int>(NUM_TILES);
@@ -131,7 +142,7 @@ int main(int argc, char* argv[])
                                                  scan_tile_value_inclusive_buffer.view(),
                                                  exclusive_buffer.view(),
                                                  inclusive_buffer.view())
-                       .dispatch(NUM_TILES * BLOCK_SIZE);
+                       .dispatch(static_cast<luisa::uint>(NUM_GRID_BLOCKS * BLOCK_SIZE));
         stream << cmdlist.commit() << synchronize();
 
         luisa::vector<int> exclusive_result(NUM_TILES);
@@ -214,9 +225,13 @@ int main(int argc, char* argv[])
                              TilePrefixCallbackOp<KVP, KVPScanOp, ScanTileStateViewer<KVP>>;
 
                          auto temp_storage = luisa::compute::Shared<TilePrefixTempStorage<KVP>>(1);
-                         KVPScanOp         scan_op{sum_op};
-                         tile_prefix_op    prefix(viewer, &temp_storage, scan_op);
-                         const auto        tile_idx = prefix.GetTileIndex();
+                   KVPScanOp scan_op{sum_op};
+                   $for (tile_idx,
+                         compute::block_x(),
+                         compute::UInt(NUM_TILES),
+                         compute::UInt(NUM_GRID_BLOCKS))
+                   {
+                   tile_prefix_op prefix(viewer, &temp_storage, scan_op, tile_idx);
                          compute::Var<KVP> block_aggregate;
                          block_aggregate.key   = def(1);
                          block_aggregate.value = 1;
@@ -247,6 +262,7 @@ int main(int argc, char* argv[])
                                  };
                              };
                          };
+                         };
                      });
 
         auto exclusive_buffer = device.create_buffer<KVP>(NUM_TILES);
@@ -256,7 +272,7 @@ int main(int argc, char* argv[])
                                                  scan_tile_value_inclusive_buffer.view(),
                                                  exclusive_buffer.view(),
                                                  inclusive_buffer.view())
-                       .dispatch(NUM_TILES * BLOCK_SIZE);
+                       .dispatch(static_cast<luisa::uint>(NUM_GRID_BLOCKS * BLOCK_SIZE));
         stream << cmdlist.commit() << synchronize();
 
         luisa::vector<KVP> exclusive_result(NUM_TILES);

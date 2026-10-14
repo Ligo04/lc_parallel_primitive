@@ -84,16 +84,54 @@ namespace details
 
                     ArrayVar<Type4Byte, ITEMS_PER_THREAD> items;
                     SmemTypePtr<Type4Byte> s_data = new SmemType<Type4Byte>{shared_mem_size};
+                    // Coalesced (block-striped) global I/O transposed through shared
+                    // memory so the per-thread register array stays in the blocked,
+                    // thread-major order that BlockScan requires for an order-correct
+                    // prefix sum. Thread `thid` fetches tile positions
+                    // {i*BLOCK + thid} (adjacent threads -> adjacent addresses) into
+                    // shared, then reads the blocked range {thid*ITEMS + i} back into
+                    // registers. The end bound `num_remaining` is compared against the
+                    // RELATIVE tile position before adding `tile_start`, exactly as the
+                    // previous guarded DIRECT load did.
+                    UInt block_stride = UInt(BLOCK_SIZE);
                     $if(is_last_tile)
                     {
-                        BlockLoad<Type4Byte, BLOCK_SIZE, ITEMS_PER_THREAD>(s_data).Load(
-                            d_in, items, tile_start, num_remaining);
+                        for(auto i = 0u; i < ITEMS_PER_THREAD; ++i)
+                        {
+                            UInt p = UInt(i) * block_stride + thid; // coalesced tile position
+                            $if(p < num_remaining)
+                            {
+                                (*s_data)[p] = d_in.read(tile_start + p);
+                            };
+                        };
+                        sync_block();
+                        for(auto i = 0u; i < ITEMS_PER_THREAD; ++i)
+                        {
+                            UInt l = thid * UInt(ITEMS_PER_THREAD) + UInt(i); // blocked logical position
+                            $if(l < num_remaining)
+                            {
+                                items[i] = (*s_data)[l];
+                            }
+                            $else
+                            {
+                                items[i] = Type4Byte(0);
+                            };
+                        };
                     }
                     $else
                     {
-                        BlockLoad<Type4Byte, BLOCK_SIZE, ITEMS_PER_THREAD>(s_data).Load(d_in, items, tile_start);
+                        for(auto i = 0u; i < ITEMS_PER_THREAD; ++i)
+                        {
+                            UInt p = UInt(i) * block_stride + thid;
+                            (*s_data)[p] = d_in.read(tile_start + p);
+                        };
+                        sync_block();
+                        for(auto i = 0u; i < ITEMS_PER_THREAD; ++i)
+                        {
+                            UInt l = thid * UInt(ITEMS_PER_THREAD) + UInt(i);
+                            items[i] = (*s_data)[l];
+                        };
                     };
-                    sync_block();
 
                     ArrayVar<Type4Byte, ITEMS_PER_THREAD> output_items;
                     $if(tile_id == 0)
@@ -132,14 +170,34 @@ namespace details
                     };
 
                     sync_block();
+                    // Reverse transpose: write the scan results back into shared at
+                    // their blocked logical positions, then store to global in the
+                    // coalesced (block-striped) order. The (thid, i) -> l mapping here
+                    // is identical to the load side, so element ordering is preserved.
+                    for(auto i = 0u; i < ITEMS_PER_THREAD; ++i)
+                    {
+                        UInt l = thid * UInt(ITEMS_PER_THREAD) + UInt(i);
+                        (*s_data)[l] = output_items[i];
+                    };
+                    sync_block();
                     $if(is_last_tile)
                     {
-                        BlockStore<Type4Byte, BLOCK_SIZE, ITEMS_PER_THREAD>(s_data).Store(
-                            output_items, d_out, tile_start, num_remaining);
+                        for(auto i = 0u; i < ITEMS_PER_THREAD; ++i)
+                        {
+                            UInt p = UInt(i) * block_stride + thid;
+                            $if(p < num_remaining)
+                            {
+                                d_out.write(tile_start + p, (*s_data)[p]);
+                            };
+                        };
                     }
                     $else
                     {
-                        BlockStore<Type4Byte, BLOCK_SIZE, ITEMS_PER_THREAD>(s_data).Store(output_items, d_out, tile_start);
+                        for(auto i = 0u; i < ITEMS_PER_THREAD; ++i)
+                        {
+                            UInt p = UInt(i) * block_stride + thid;
+                            d_out.write(tile_start + p, (*s_data)[p]);
+                        };
                     };
                 });
 

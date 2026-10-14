@@ -113,9 +113,17 @@ namespace details
         void ConsumeFullTile(Var<Type4Byte>& thread_aggregate, UInt block_offset)
         {
             ArrayVar<Type4Byte, ITEMS_PER_THREAD> items;
+            // Epoch-4: block-striped (coalesced) loads.  Adjacent threads read
+            // adjacent elements at each i (global_index = block_offset +
+            // i*BLOCK_SIZE + land_id), matching ConsumePartialTile's stride so
+            // the full-tile inner loop is DRAM-coalesced instead of blocked
+            // (where adjacent threads were ITEMS_PER_THREAD apart).  Reduce is
+            // commutative + associative per-thread, so reordering the loads into
+            // a thread's register array does not change the result (the
+            // BlockReduce handles the cross-thread combine order).
             for(auto i = 0u; i < ITEMS_PER_THREAD; ++i)
             {
-                UInt global_index = block_offset + m_land_id * UInt(ITEMS_PER_THREAD) + i;
+                UInt global_index = block_offset + i * UInt(BLOCK_SIZE) + m_land_id;
                 items[i]          = m_transform_op(m_in_data.read(global_index));
             };
 
